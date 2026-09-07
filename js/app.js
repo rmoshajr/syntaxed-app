@@ -9,7 +9,7 @@ function parseRoute() {
 
 const TABS = [
   { route: 'home', icon: '🏠', label: 'Home' },
-  { route: 'path', icon: '🌲', label: 'Path' },
+  { route: 'path', icon: '🛤️', label: 'Path' },
   { route: 'settings', icon: '⚙️', label: 'Profile' },
 ];
 
@@ -61,12 +61,12 @@ function renderAbout(main) {
   main.innerHTML = `
     <div style="padding:14px 18px 0;"><a href="#/settings" class="btn btn-ghost btn-sm">← Back</a></div>
     <section class="hero">
-      <div class="badge">🐛 Beta — Python MVP</div>
+      <div class="badge">🐛 Beta — 5-Language MVP</div>
       <h1>Learn to code by fixing what's broken.</h1>
       <p class="lead">Syntaxed teaches programming the way the best spoken-language apps teach language: general meaning first, precise rules second. Duolingo-style lessons, a cyberpunk debugging theme, and a beetle mascot who's just trying to help.</p>
       <div class="cta-row">
         <a href="#/home" class="btn btn-primary">Start Learning ▸</a>
-        <a href="#/path" class="btn btn-ghost">View the Python Path</a>
+        <a href="#/path" class="btn btn-ghost">View the Path</a>
       </div>
     </section>
 
@@ -89,7 +89,7 @@ function renderAbout(main) {
 
     <section class="section">
       <h2>Built like a skill tree</h2>
-      <p class="sub">Entry-Level → Associate → Advanced, gated like real certification prep — not a straight line.</p>
+      <p class="sub">PCEP → PCAP → PCPP1 → PCPP2, gated like real certification prep — not a straight line.</p>
       <div class="grid-3">
         <div class="card"><div class="icon">🔓</div><h3>Non-linear unlocks</h3><p>Some lessons branch open in parallel once you're ready — but core basics are always a hard gate before you advance.</p></div>
         <div class="card"><div class="icon">⏩</div><h3>Test out</h3><p>Confident already? Pass a test built from the hardest questions in a locked lesson's prerequisites to skip ahead for half XP.</p></div>
@@ -110,13 +110,19 @@ function renderAbout(main) {
       <h2>Launch languages</h2>
       <p class="sub">Four of the five most-used languages, plus C for the classroom crowd.</p>
       <div class="langs">
-        <div class="lang-pill active-lang">Python</div>
-        <div class="lang-pill soon">JavaScript</div>
-        <div class="lang-pill soon">Java</div>
-        <div class="lang-pill soon">C++</div>
-        <div class="lang-pill soon">C</div>
+        ${LANGUAGES.map(l => {
+          const live = languageIsLive(l.id);
+          const active = l.id === getState().currentLanguage;
+          return `<div class="lang-pill ${live ? '' : 'soon'} ${active ? 'active-lang' : ''}" data-lang="${l.id}" ${live ? '' : 'title="Coming soon"'}>${escapeHtml(l.label)}</div>`;
+        }).join('')}
       </div>
     </section>`;
+
+  main.querySelectorAll('.lang-pill[data-lang]').forEach(pill => {
+    const lang = pill.dataset.lang;
+    if (!languageIsLive(lang)) return;
+    pill.onclick = () => { setLanguage(lang); navigate('#/home'); };
+  });
 }
 
 // ---------------- Home ----------------
@@ -129,19 +135,27 @@ function statsRowHtml(ls) {
     </div>`;
 }
 
+function certTrackLabel(lang) {
+  const checkpoints = CERT_CHECKPOINTS[lang] || [];
+  return checkpoints.length ? checkpoints.map(c => c.name).join(' → ') : 'Full roadmap in progress';
+}
+
 function renderHome(main) {
   const lang = getState().currentLanguage;
   const ls = getLangState(lang);
-  const completedCount = Object.keys(ls.completed).filter(isPlayable).length;
-  const totalPlayable = Object.keys(LESSONS).length;
-  const pct = Math.round((completedCount / totalPlayable) * 100);
-  const showOnboard = !getState().onboarded && completedCount === 0;
+  const meta = languageMeta(lang);
+  const C = curriculum(lang);
+  const completedCount = Object.keys(ls.completed).filter(id => isPlayable(id, lang)).length;
+  const totalPlayable = Object.keys(C.LESSONS).length;
+  const pct = totalPlayable ? Math.round((completedCount / totalPlayable) * 100) : 0;
+  const showOnboard = !getState().onboarded && completedCount === 0 && totalPlayable > 0;
   const currentId = findCurrentLessonId(lang);
-  const currentLesson = getLesson(currentId);
-  const ctaHref = isPlayable(currentId) ? `#/lesson/${currentId}` : '#/path';
-  const ctaLabel = !isPlayable(currentId)
+  const currentLesson = currentId ? getLesson(currentId, lang) : null;
+  const ctaHref = currentLesson && isPlayable(currentId, lang) ? `#/lesson/${currentId}` : '#/path';
+  const ctaLabel = !currentLesson || !isPlayable(currentId, lang)
     ? "🎉 All caught up — see what's next"
     : `${completedCount === 0 ? 'Start' : 'Continue'}: ${escapeHtml(currentLesson.title)} ▸`;
+  const otherLanguages = LANGUAGES.filter(l => l.id !== lang);
 
   main.innerHTML = `
     <div class="home-wrap">
@@ -153,11 +167,11 @@ function renderHome(main) {
       <div id="onboard-slot"></div>
       <div class="lang-card">
         <div class="l-left">
-          <div class="lang-badge">PY</div>
+          <div class="lang-badge">${escapeHtml(meta.badge)}</div>
           <div>
-            <h3 style="margin:0 0 4px">Python</h3>
+            <h3 style="margin:0 0 4px">${escapeHtml(meta.label)}</h3>
             <div class="progress-bar"><span style="width:${pct}%"></span></div>
-            <div style="font-size:12px;color:var(--text-dim);margin-top:6px">${completedCount} / ${totalPlayable} lessons complete · Entry-Level → Associate</div>
+            <div style="font-size:12px;color:var(--text-dim);margin-top:6px">${completedCount} / ${totalPlayable} lessons complete · ${escapeHtml(certTrackLabel(lang))}</div>
           </div>
         </div>
         <a href="${ctaHref}" class="btn btn-primary btn-block" style="margin-top:14px;">${ctaLabel}</a>
@@ -165,23 +179,34 @@ function renderHome(main) {
       <div class="home-section">
         <div class="section-title">More Languages</div>
         <div class="langs" style="justify-content:flex-start;">
-          <div class="lang-pill soon">JavaScript</div><div class="lang-pill soon">Java</div><div class="lang-pill soon">C++</div><div class="lang-pill soon">C</div>
+          ${otherLanguages.map(l => {
+            const live = languageIsLive(l.id);
+            return `<div class="lang-pill ${live ? '' : 'soon'}" data-lang="${l.id}" ${live ? '' : 'title="Coming soon"'}>${escapeHtml(l.label)}</div>`;
+          }).join('')}
         </div>
       </div>
     </div>`;
 
+  main.querySelectorAll('.lang-pill[data-lang]').forEach(pill => {
+    const target = pill.dataset.lang;
+    if (!languageIsLive(target)) return;
+    pill.onclick = () => { setLanguage(target); render(); };
+  });
+
   if (showOnboard) {
     const slot = main.querySelector('#onboard-slot');
+    const hasPlacement = (curriculum(lang).UNITS.length >= 2);
     slot.innerHTML = `
       <div class="card" style="margin:16px 0;">
         <h3 style="margin:0 0 4px">New here?</h3>
-        <p style="margin:0 0 12px; color:var(--text-dim); font-size:14px;">Take a placement test to skip ahead, or just start from Lesson 1.</p>
+        <p style="margin:0 0 12px; color:var(--text-dim); font-size:14px;">${hasPlacement ? 'Take a placement test to skip ahead, or just start from Lesson 1.' : 'Start from Lesson 1 whenever you\'re ready.'}</p>
         <div class="small-btn-row">
-          <button class="btn btn-primary btn-sm" id="btn-placement">Take Placement Test</button>
+          ${hasPlacement ? '<button class="btn btn-primary btn-sm" id="btn-placement">Take Placement Test</button>' : ''}
           <button class="btn btn-ghost btn-sm" id="btn-skip-onboard">Start from Lesson 1</button>
         </div>
       </div>`;
-    slot.querySelector('#btn-placement').onclick = () => startPlacementTest(main);
+    const placementBtn = slot.querySelector('#btn-placement');
+    if (placementBtn) placementBtn.onclick = () => startPlacementTest(main);
     slot.querySelector('#btn-skip-onboard').onclick = () => {
       const st = getState(); st.onboarded = true; save();
       navigate('#/path');
@@ -192,16 +217,29 @@ function renderHome(main) {
 // First not-yet-complete, unlocked lesson in curriculum order — used to focus Home's CTA
 // and the skill tree's default view on "where the user actually is."
 function findCurrentLessonId(lang) {
-  const nextUp = Object.keys(LESSONS).find(id => lessonStatus(lang, id) === 'available');
+  const C = curriculum(lang);
+  const ids = Object.keys(C.LESSONS);
+  const nextUp = ids.find(id => lessonStatus(lang, id) === 'available');
   if (nextUp) return nextUp;
-  const allComplete = Object.keys(LESSONS).every(id => isLessonComplete(lang, id));
-  return allComplete ? 'u3l1' : 'u1l1';
+  const allComplete = ids.length > 0 && ids.every(id => isLessonComplete(lang, id));
+  if (allComplete) {
+    const stubIds = Object.keys(C.STUB_LESSONS);
+    if (stubIds.length) return stubIds[0];
+  }
+  return (C.UNITS[0] && C.UNITS[0].lessons[0]) || ids[0] || null;
+}
+
+// Placement scope is always "the first two units" of whichever language is active —
+// generalizes automatically as new languages are added.
+function placementScopeIds(lang) {
+  const UNITS = curriculum(lang).UNITS;
+  return UNITS.slice(0, 2).flatMap(u => u.lessons).filter(id => isPlayable(id, lang));
 }
 
 function startPlacementTest(main) {
   const lang = getState().currentLanguage;
-  const ids = ['u1l1','u1l2','u1l3','u1l4','u2l1','u2l2','u2l3','u2l4'];
-  const pool = collectPlacementQuestions(ids);
+  const ids = placementScopeIds(lang);
+  const pool = collectPlacementQuestions(ids, lang);
   const mcqs = shuffle(pool.filter(q => q.type === 'mcq'));
   const codes = shuffle(pool.filter(q => q.type === 'code'));
   const questions = shuffle([...mcqs.slice(0, 8), ...codes.slice(0, 3)]);
@@ -223,22 +261,34 @@ function startPlacementTest(main) {
 function applyPlacementResult(score, container) {
   const lang = getState().currentLanguage;
   const st = getState(); st.onboarded = true; save();
+  const UNITS = curriculum(lang).UNITS;
+  const unit1Ids = ((UNITS[0] && UNITS[0].lessons) || []).filter(id => isPlayable(id, lang));
+  const unit2Ids = ((UNITS[1] && UNITS[1].lessons) || []).filter(id => isPlayable(id, lang));
   let unlockedIds = [], text;
   if (score >= 0.8) {
-    unlockedIds = ['u1l1','u1l2','u1l3','u1l4','u1quiz','u2l1','u2l2','u2l3','u2l4','u2quiz'];
+    unlockedIds = [...unit1Ids, ...unit2Ids];
     text = `Strong score — you've tested out of Unit 1 and Unit 2, at half XP each.`;
   } else if (score >= 0.5) {
-    unlockedIds = ['u1l1','u1l2','u1l3','u1l4','u1quiz'];
+    unlockedIds = unit1Ids;
     text = `Solid start — you've tested out of Unit 1 at half XP. Unit 2 starts fresh.`;
   } else {
     text = `Let's build from the ground up — starting at Lesson 1.`;
   }
   unlockedIds.forEach(id => { if (!isLessonComplete(lang, id)) markLessonComplete(lang, id, { testedOut: true }); });
+  const newCert = checkNewlyReadyCert(lang);
   renderResultScreen(container, {
     icon: score >= 0.5 ? '🎓' : '🌱', title: 'Placement Result',
     text: `${text} (Score: ${Math.round(score * 100)}%)`,
-    cta: 'Go to Path', onCta: () => navigate('#/path'),
+    cta: 'Go to Path', onCta: () => { navigate('#/path'); if (newCert) setTimeout(() => showCertReadyModal(newCert), 30); },
   });
+}
+
+function showCertReadyModal(cp) {
+  openModal(`
+    <div class="big-icon">${cp.icon}</div>
+    <h2>Ready for ${escapeHtml(cp.name)}!</h2>
+    <p style="color:var(--text-dim)">You've completed everything on the roadmap through this checkpoint. Consider practicing with exam-style questions and taking the <strong>${escapeHtml(cp.fullName)}</strong> exam.</p>
+    <button class="btn btn-primary btn-block" data-close>Nice ▸</button>`);
 }
 
 function renderResultScreen(container, { icon, title, text, cta, onCta }) {
@@ -252,30 +302,33 @@ function renderResultScreen(container, { icon, title, text, cta, onCta }) {
   container.querySelector('#result-cta').onclick = onCta;
 }
 
-// ---------------- Path (zoomable skill tree) ----------------
-const TREE_NODE_D = 76;
-const TREE_SPACING_X = 150;
-const TREE_SPACING_Y = 165;
-const TREE_PAD = 90;
+// ---------------- Path (Duolingo-style winding trail) ----------------
+const DUO_TRAIL_WIDTH = 300;
+const DUO_NODE_D = 72;
+const DUO_ROW_H = 108;
+const DUO_BANNER_H = 104;
+const DUO_CHECKPOINT_H = 128;
+const DUO_WAVE = [0, 45, 78, 45, 0, -45, -78, -45];
+const DUO_UNIT_COLORS = ['--cyan', '--magenta', '--green', '--amber'];
 
-function nodeStatus(lessonId, lang, associateUnlocked) {
-  const unit = UNITS.find(u => u.lessons.includes(lessonId));
-  if (unit.comingSoon) return 'locked';
-  if (unit.tier === 'associate' && !associateUnlocked) return 'locked';
+// Gating is driven entirely by PREREQS now that the whole roadmap is built —
+// a unit's own comingSoon flag is the only extra override (for future in-progress units).
+function nodeStatus(lessonId, lang) {
+  const unit = curriculum(lang).UNITS.find(u => u.lessons.includes(lessonId));
+  if (unit && unit.comingSoon) return 'locked';
   return lessonStatus(lang, lessonId);
 }
 
 function renderPath(main) {
   const lang = getState().currentLanguage;
   const mode = getState().pathView || 'tree';
-  const associateUnlocked = isLessonComplete(lang, 'u1quiz') && isLessonComplete(lang, 'u2quiz');
 
   main.innerHTML = `
     <div class="tree-wrap">
       <div class="tree-toolbar">
-        <h1 style="margin:0">Python Path</h1>
+        <h1 style="margin:0">${escapeHtml(languageMeta(lang).label)} Path</h1>
         <div class="view-toggle">
-          <button class="${mode === 'tree' ? 'active' : ''}" id="view-tree">🌲 Tree</button>
+          <button class="${mode === 'tree' ? 'active' : ''}" id="view-tree">🛤️ Path</button>
           <button class="${mode === 'list' ? 'active' : ''}" id="view-list">📋 List</button>
         </div>
       </div>
@@ -289,16 +342,17 @@ function renderPath(main) {
   main.querySelector('#view-list').onclick = () => { setPathView('list'); renderPath(main); };
 
   const body = main.querySelector('#path-body');
-  if (mode === 'list') renderPathList(body, lang, associateUnlocked);
-  else renderPathTree(body, lang, associateUnlocked);
+  if (mode === 'list') renderPathList(body, lang);
+  else renderDuoPath(body, lang);
 }
 
-function renderPathList(body, lang, associateUnlocked) {
-  body.innerHTML = `<div class="lv-list">${UNITS.map(unit => {
+function renderPathList(body, lang) {
+  const C = curriculum(lang);
+  body.innerHTML = `<div class="lv-list">${C.UNITS.map(unit => {
     const rows = unit.lessons.map(id => {
-      const lesson = getLesson(id);
-      const status = nodeStatus(id, lang, associateUnlocked);
-      const meta = unit.comingSoon ? 'Coming soon' : `${LESSONS[id].xp} XP${LESSONS[id].isQuiz ? ' · Quiz' : ''}`;
+      const lesson = getLesson(id, lang);
+      const status = nodeStatus(id, lang);
+      const meta = unit.comingSoon ? 'Coming soon' : `${C.LESSONS[id].xp} XP${C.LESSONS[id].isQuiz ? ' · Quiz' : ''}`;
       return `
         <button class="lv-row ${status}" data-id="${id}" data-status="${status}">
           <span class="lv-icon">${status === 'complete' ? '✅' : lesson.icon}</span>
@@ -318,137 +372,119 @@ function renderPathList(body, lang, associateUnlocked) {
   });
 }
 
-function renderPathTree(body, lang, associateUnlocked) {
-  body.innerHTML = `
-    <div class="tree-controls" style="margin-bottom:10px;">
-      <button class="btn btn-sm" id="zoom-out" title="Zoom out">−</button>
-      <button class="btn btn-sm" id="zoom-recenter" title="Center on your current lesson">🎯 My Lesson</button>
-      <button class="btn btn-sm" id="zoom-reset" title="Zoom out to see the whole tree">⛶ Fit All</button>
-      <button class="btn btn-sm" id="zoom-in" title="Zoom in">+</button>
-    </div>
-    <div class="tree-viewport" id="tree-viewport">
-      <div class="tree-canvas" id="tree-canvas">
-        <svg class="tree-edges" id="tree-edges"></svg>
-        <div class="tree-nodes-layer" id="tree-nodes"></div>
-        <div class="tree-labels-layer" id="tree-labels"></div>
-      </div>
-    </div>
-    <p class="tree-note" style="text-align:center; margin-top:10px;">Scroll or pinch to zoom · drag to pan · click a node to open it</p>`;
-
-  const viewport = document.getElementById('tree-viewport');
-  const canvas = document.getElementById('tree-canvas');
-  const svg = document.getElementById('tree-edges');
-  const nodesLayer = document.getElementById('tree-nodes');
-  const labelsLayer = document.getElementById('tree-labels');
-
-  const cols = Object.values(TREE_LAYOUT).map(p => p.col);
-  const rows = Object.values(TREE_LAYOUT).map(p => p.row);
-  const minCol = Math.min(...cols), maxCol = Math.max(...cols), maxRow = Math.max(...rows);
-  const width = (maxCol - minCol) * TREE_SPACING_X + TREE_NODE_D + TREE_PAD * 2;
-  const height = maxRow * TREE_SPACING_Y + TREE_NODE_D + TREE_PAD * 2;
-  canvas.style.width = width + 'px';
-  canvas.style.height = height + 'px';
-  svg.setAttribute('width', width);
-  svg.setAttribute('height', height);
-
-  const posOf = (id) => {
-    const p = TREE_LAYOUT[id];
-    return { x: (p.col - minCol) * TREE_SPACING_X + TREE_PAD + TREE_NODE_D / 2, y: p.row * TREE_SPACING_Y + TREE_PAD + TREE_NODE_D / 2 };
-  };
-
-  svg.innerHTML = TREE_EDGES.map(([a, b]) => {
-    const pa = posOf(a), pb = posOf(b);
-    const openEdge = nodeStatus(b, lang, associateUnlocked) !== 'locked';
-    return `<line x1="${pa.x}" y1="${pa.y}" x2="${pb.x}" y2="${pb.y}" class="edge ${openEdge ? 'edge-open' : ''}" />`;
-  }).join('');
-
+function renderDuoPath(body, lang) {
+  const C = curriculum(lang);
   const currentId = findCurrentLessonId(lang);
-  nodesLayer.innerHTML = Object.keys(TREE_LAYOUT).map(id => {
-    const { x, y } = posOf(id);
-    const lesson = getLesson(id);
-    const status = nodeStatus(id, lang, associateUnlocked);
-    const isQuiz = LESSONS[id] && LESSONS[id].isQuiz;
+  const checkpointsByUnit = {};
+  (CERT_CHECKPOINTS[lang] || []).forEach(cp => { checkpointsByUnit[cp.afterUnit] = cp; });
+
+  // Lay out unit banners, lesson nodes, and checkpoint badges along one winding vertical
+  // trail. Position is derived purely from unit/lesson order — no hand-placed coordinates
+  // needed, so this works automatically for any curriculum shape.
+  let y = 24;
+  let waveIdx = 0;
+  const banners = [];
+  const nodes = [];       // every renderable node (lessons + checkpoints), in path order
+  const lessonPoints = []; // just lesson centers, for the connecting line
+
+  C.UNITS.forEach((unit, unitIdx) => {
+    const colorVar = DUO_UNIT_COLORS[unitIdx % DUO_UNIT_COLORS.length];
+    banners.push({ unit, y, colorVar });
+    y += DUO_BANNER_H;
+    unit.lessons.forEach(lessonId => {
+      const cx = DUO_TRAIL_WIDTH / 2 + DUO_WAVE[waveIdx % DUO_WAVE.length];
+      const node = { kind: 'lesson', id: lessonId, cx, y, colorVar };
+      nodes.push(node);
+      lessonPoints.push({ cx, cy: y + DUO_NODE_D / 2 });
+      waveIdx++;
+      y += DUO_ROW_H;
+    });
+    const cp = checkpointsByUnit[unit.id];
+    if (cp) {
+      nodes.push({ kind: 'checkpoint', cp, cx: DUO_TRAIL_WIDTH / 2, y });
+      y += DUO_CHECKPOINT_H;
+    }
+  });
+  const totalHeight = y + 20;
+
+  let pathD = '';
+  if (lessonPoints.length > 1) {
+    pathD = `M ${lessonPoints[0].cx} ${lessonPoints[0].cy}`;
+    for (let i = 1; i < lessonPoints.length; i++) {
+      const prev = lessonPoints[i - 1], cur = lessonPoints[i];
+      const midY = (prev.cy + cur.cy) / 2;
+      pathD += ` C ${prev.cx} ${midY}, ${cur.cx} ${midY}, ${cur.cx} ${cur.cy}`;
+    }
+  }
+
+  const bannersHtml = banners.map(b => `
+    <div class="duo-banner" style="top:${b.y}px; --unit-color:var(${b.colorVar});">
+      <span class="duo-banner-icon">${b.unit.icon}</span>
+      <div class="duo-banner-text">
+        <div class="duo-banner-title">${escapeHtml(b.unit.title)}${b.unit.comingSoon ? ' 🚧' : ''}</div>
+        <div class="duo-banner-sub">${b.unit.lessons.length} lesson${b.unit.lessons.length === 1 ? '' : 's'}</div>
+      </div>
+    </div>`).join('');
+
+  const nodesHtml = nodes.map(n => {
+    if (n.kind === 'checkpoint') {
+      const { ready, done, total } = certReadiness(lang, n.cp);
+      return `
+        <div class="duo-node duo-checkpoint ${ready ? 'complete' : 'locked'}" data-cp="${n.cp.id}" style="left:${n.cx}px; top:${n.y}px;">
+          <div class="duo-node-circle"><span>${n.cp.icon}</span></div>
+          <div class="duo-node-label">${escapeHtml(n.cp.name)}${ready ? ' ✓' : ` (${done}/${total})`}</div>
+        </div>`;
+    }
+    const lesson = getLesson(n.id, lang);
+    const status = nodeStatus(n.id, lang);
+    const isQuiz = C.LESSONS[n.id] && C.LESSONS[n.id].isQuiz;
+    const isCurrent = n.id === currentId;
     return `
-      <div class="tree-node ${status} ${isQuiz ? 'quiz' : ''} ${id === currentId ? 'current' : ''}" data-id="${id}" data-status="${status}" style="left:${x}px; top:${y}px;">
-        <div class="tn-circle">${status === 'complete' ? '✅' : lesson.icon}</div>
-        <div class="tn-label">${escapeHtml(lesson.title)}</div>
+      <div class="duo-node ${status} ${isQuiz ? 'quiz' : ''} ${isCurrent ? 'current' : ''}" data-id="${n.id}" data-status="${status}" style="left:${n.cx}px; top:${n.y}px; --unit-color:var(${n.colorVar});">
+        ${isCurrent ? '<div class="duo-start-badge">START</div>' : ''}
+        <div class="duo-node-circle">${status === 'complete' ? '✅' : lesson.icon}</div>
+        <div class="duo-node-label">${escapeHtml(lesson.title)}</div>
       </div>`;
   }).join('');
 
-  labelsLayer.innerHTML = Object.entries(UNIT_LABEL_ANCHOR).map(([unitId, anchorLesson]) => {
-    const unit = UNITS.find(u => u.id === unitId);
-    const { x, y } = posOf(anchorLesson);
-    return `<div class="tree-unit-label" style="left:${x}px; top:${y - TREE_NODE_D / 2 - 14}px;">${unit.icon} ${escapeHtml(unit.title)}${unit.comingSoon ? ' 🚧' : ''}</div>`;
-  }).join('');
+  body.innerHTML = `
+    <div class="duo-trail" id="duo-trail" style="height:${totalHeight}px;">
+      <svg class="duo-line" width="${DUO_TRAIL_WIDTH}" height="${totalHeight}"><path class="duo-line-path" d="${pathD}" /></svg>
+      ${bannersHtml}
+      ${nodesHtml}
+    </div>
+    <p class="tree-note" style="text-align:center; margin-top:10px;">Scroll to see your path · tap a node to open it</p>`;
 
-  nodesLayer.querySelectorAll('.tree-node').forEach(node => {
+  body.querySelectorAll('.duo-checkpoint').forEach(node => {
+    node.addEventListener('click', () => openCertCheckpointModal(node.dataset.cp, lang));
+  });
+  body.querySelectorAll('.duo-node:not(.duo-checkpoint)').forEach(node => {
     node.addEventListener('click', () => onNodeClick(node.dataset.id, node.dataset.status));
   });
 
-  setupTreePanZoom(viewport, canvas, width, height, posOf(currentId));
+  const currentEl = body.querySelector('.duo-node.current');
+  if (currentEl) requestAnimationFrame(() => currentEl.scrollIntoView({ block: 'center' }));
 }
 
-function setupTreePanZoom(viewport, canvas, contentWidth, contentHeight, focusPoint) {
-  let scale = 1, tx = 0, ty = 0, dragging = false, moved = false, lastX = 0, lastY = 0;
-  const MIN_SCALE = 0.25, MAX_SCALE = 1.8;
-
-  function apply() { canvas.style.transform = `translate(${tx}px, ${ty}px) scale(${scale})`; }
-
-  function fitAll() {
-    const vw = viewport.clientWidth, vh = viewport.clientHeight;
-    scale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, Math.min(vw / contentWidth, vh / contentHeight) * 0.94));
-    tx = (vw - contentWidth * scale) / 2;
-    ty = 24;
-    apply();
-  }
-
-  // Default view: centered on the user's current lesson, at readable (1x) zoom.
-  function centerOnFocus() {
-    const vw = viewport.clientWidth, vh = viewport.clientHeight;
-    scale = 1;
-    tx = vw / 2 - focusPoint.x * scale;
-    ty = vh / 2 - focusPoint.y * scale;
-    apply();
-  }
-
-  viewport.addEventListener('wheel', (e) => {
-    e.preventDefault();
-    const rect = viewport.getBoundingClientRect();
-    const cx = e.clientX - rect.left, cy = e.clientY - rect.top;
-    const prevScale = scale;
-    scale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, scale * (1 - e.deltaY * 0.0015)));
-    tx = cx - (cx - tx) * (scale / prevScale);
-    ty = cy - (cy - ty) * (scale / prevScale);
-    apply();
-  }, { passive: false });
-
-  viewport.addEventListener('pointerdown', (e) => {
-    dragging = true; moved = false; lastX = e.clientX; lastY = e.clientY;
-    viewport.setPointerCapture(e.pointerId);
-    viewport.classList.add('dragging');
-  });
-  viewport.addEventListener('pointermove', (e) => {
-    if (!dragging) return;
-    tx += e.clientX - lastX; ty += e.clientY - lastY;
-    if (Math.abs(e.clientX - lastX) + Math.abs(e.clientY - lastY) > 2) moved = true;
-    lastX = e.clientX; lastY = e.clientY;
-    apply();
-  });
-  // Suppress the click that follows a drag, so panning doesn't accidentally open a node.
-  viewport.addEventListener('click', (e) => { if (moved) { e.stopPropagation(); moved = false; } }, true);
-  ['pointerup', 'pointerleave', 'pointercancel'].forEach(ev => viewport.addEventListener(ev, () => { dragging = false; viewport.classList.remove('dragging'); }));
-
-  document.getElementById('zoom-in').onclick = () => { scale = Math.min(MAX_SCALE, scale * 1.2); apply(); };
-  document.getElementById('zoom-out').onclick = () => { scale = Math.max(MIN_SCALE, scale * 0.8); apply(); };
-  document.getElementById('zoom-reset').onclick = fitAll; // "Fit All" — the previous default view, now an alternate option
-  document.getElementById('zoom-recenter').onclick = centerOnFocus;
-
-  centerOnFocus();
+function openCertCheckpointModal(cpId, lang) {
+  const cp = (CERT_CHECKPOINTS[lang] || []).find(c => c.id === cpId);
+  if (!cp) return;
+  const { ready, done, total } = certReadiness(lang, cp);
+  openModal(`
+    <div class="big-icon">${cp.icon}</div>
+    <h2>${escapeHtml(cp.name)} Checkpoint</h2>
+    <p style="color:var(--text-dim)">${escapeHtml(cp.fullName)}</p>
+    ${ready
+      ? `<p style="color:var(--green); font-weight:700;">✅ You've covered everything on the roadmap through this point — consider practicing for and taking the exam!</p>`
+      : `<p style="color:var(--text-dim)">${done} / ${total} lessons complete on the path to this checkpoint. Keep going!</p>
+         <div class="progress-bar" style="margin:10px auto; max-width:260px;"><span style="width:${Math.round(done / total * 100)}%"></span></div>`}
+    <button class="btn btn-primary btn-block" data-close style="margin-top:10px;">Close</button>`);
 }
 
 function onNodeClick(lessonId, status) {
-  const lesson = getLesson(lessonId);
-  if (!isPlayable(lessonId)) {
+  const lang = getState().currentLanguage;
+  const lesson = getLesson(lessonId, lang);
+  if (!isPlayable(lessonId, lang)) {
     openComingSoonModal(lesson);
     return;
   }
@@ -461,13 +497,13 @@ function openComingSoonModal(lesson) {
   openModal(`
     <div class="big-icon">🚧</div>
     <h2>${escapeHtml(lesson.title)}</h2>
-    <p style="color:var(--text-dim)">This lesson is on the roadmap but isn't built yet. Entry-Level's Decisions &amp; Loops units, and the whole Associate tier, are coming soon.</p>
+    <p style="color:var(--text-dim)">This lesson is on the roadmap but isn't built yet — check back soon.</p>
     <button class="btn btn-primary btn-block" data-close>Got it</button>`);
 }
 
 function openCompleteLessonModal(lessonId) {
-  const lesson = getLesson(lessonId);
   const lang = getState().currentLanguage;
+  const lesson = getLesson(lessonId, lang);
   const mem = getLangState(lang).memory;
   openModal(`
     <div class="big-icon">✅</div>
@@ -479,12 +515,12 @@ function openCompleteLessonModal(lessonId) {
 }
 
 function openLockedLessonModal(lessonId) {
-  const lesson = getLesson(lessonId);
   const lang = getState().currentLanguage;
-  const prereqIds = collectPrereqs(lessonId);
-  const hardQs = collectHardQuestions(prereqIds);
+  const lesson = getLesson(lessonId, lang);
+  const prereqIds = collectPrereqs(lessonId, lang);
+  const hardQs = collectHardQuestions(prereqIds, lang);
   const avail = testOutAvailability(lang, lessonId);
-  const prereqNames = prereqIds.map(id => getLesson(id).title).join(', ') || '—';
+  const prereqNames = prereqIds.map(id => getLesson(id, lang).title).join(', ') || '—';
   openModal(`
     <div class="big-icon">🔒</div>
     <h2>${escapeHtml(lesson.title)}</h2>
@@ -514,8 +550,8 @@ function openModal(innerHtml) {
 // ---------------- Lesson / Review / Test-out routes ----------------
 function startLessonRoute(root, lessonId, reviewMode) {
   const lang = getState().currentLanguage;
-  const lesson = getLesson(lessonId);
-  if (!lesson || !isPlayable(lessonId)) {
+  const lesson = getLesson(lessonId, lang);
+  if (!lesson || !isPlayable(lessonId, lang)) {
     root.innerHTML = `<div class="empty-note">This lesson isn't built yet — check back soon.<br><br><a href="#/path" class="btn btn-primary">Back to Path</a></div>`;
     return;
   }
@@ -528,16 +564,20 @@ function startLessonRoute(root, lessonId, reviewMode) {
   new LessonEngine({
     lesson, lang, container: root, reviewMode,
     onExit: () => navigate('#/path'),
-    onComplete: () => navigate('#/path'),
+    onComplete: () => {
+      const newCert = reviewMode ? null : checkNewlyReadyCert(lang);
+      navigate('#/path');
+      if (newCert) setTimeout(() => showCertReadyModal(newCert), 30);
+    },
     onOutOfMemory: () => { navigate('#/path'); setTimeout(() => showOutOfMemoryModal(lang), 30); },
   }).start();
 }
 
 function startTestOutRoute(root, lessonId) {
   const lang = getState().currentLanguage;
-  const lesson = getLesson(lessonId);
-  const prereqIds = collectPrereqs(lessonId);
-  const hardQs = shuffle(collectHardQuestions(prereqIds));
+  const lesson = getLesson(lessonId, lang);
+  const prereqIds = collectPrereqs(lessonId, lang);
+  const hardQs = shuffle(collectHardQuestions(prereqIds, lang));
   if (!lesson || !hardQs.length) { navigate('#/path'); return; }
   const container = document.createElement('div');
   container.className = 'container';
@@ -554,19 +594,20 @@ function startTestOutRoute(root, lessonId) {
       const passed = info.score >= 0.8;
       recordTestOutAttempt(lang, lessonId, passed);
       if (passed) prereqIds.forEach(id => { if (!isLessonComplete(lang, id)) markLessonComplete(lang, id, { testedOut: true }); });
+      const newCert = passed ? checkNewlyReadyCert(lang) : null;
       const avail = testOutAvailability(lang, lessonId);
       renderResultScreen(container, {
         icon: passed ? '🎉' : '🔁', title: passed ? 'Tested Out!' : 'Not Quite',
         text: `${Math.round(info.score * 100)}% — ${passed ? 'prerequisite lessons unlocked at half XP.' : (avail.onCooldown ? 'Out of attempts for now — 24h cooldown.' : `${avail.attemptsLeft} attempt(s) left today.`)}`,
-        cta: 'Back to Path', onCta: () => navigate('#/path'),
+        cta: 'Back to Path', onCta: () => { navigate('#/path'); if (newCert) setTimeout(() => showCertReadyModal(newCert), 30); },
       });
     },
   }).start();
 }
 
 function showOutOfMemoryModal(lang) {
-  const completedIds = Object.keys(getLangState(lang).completed).filter(isPlayable);
-  const options = completedIds.map(id => `<option value="${id}">${escapeHtml(getLesson(id).title)}</option>`).join('');
+  const completedIds = Object.keys(getLangState(lang).completed).filter(id => isPlayable(id, lang));
+  const options = completedIds.map(id => `<option value="${id}">${escapeHtml(getLesson(id, lang).title)}</option>`).join('');
   const backdrop = openModal(`
     <div class="big-icon">🔋</div>
     <h2>Out of Memory</h2>
@@ -627,8 +668,11 @@ function renderSettings(main) {
     </div>`;
 
   const opts = AVATAR_ICONS[st.avatar.kind];
-  main.querySelector('#avatar-options').innerHTML = opts.map((ic, i) =>
-    `<button class="avatar-opt ${i === st.avatar.variant ? 'selected' : ''}" data-i="${i}">${ic}</button>`).join('');
+  main.querySelector('#avatar-options').innerHTML = opts.map((name, i) =>
+    `<button class="avatar-opt ${i === st.avatar.variant ? 'selected' : ''}" data-i="${i}" title="${escapeHtml(name)}">
+       ${renderCharacter({ kind: st.avatar.kind, variant: i, color: st.avatar.color }, 44)}
+       <span class="avatar-opt-label">${escapeHtml(name)}</span>
+     </button>`).join('');
   main.querySelector('#swatches').innerHTML = AVATAR_COLORS.map(c =>
     `<button class="swatch ${c === st.avatar.color ? 'selected' : ''}" data-c="${c}" style="background:${c}"></button>`).join('');
 

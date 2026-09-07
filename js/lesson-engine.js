@@ -1,4 +1,4 @@
-// ===== Syntaxed lesson engine: question flow + browser-side Python execution =====
+// ===== Syntaxed lesson engine: question flow + browser-side code execution =====
 
 let pyodideReadyPromise = null;
 function loadPyodideRuntime(onStatus) {
@@ -32,6 +32,68 @@ async function runPythonCode(code, onStatus) {
   }
 }
 
+// JavaScript runs natively in the browser — no runtime to boot, just a sandboxed
+// console.log capture. Formatting is JSON.stringify-based (no added spaces) so it stays
+// predictable; lesson `expected` strings are authored to match this exact format.
+const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
+function formatJsValue(v) {
+  if (typeof v === 'string') return v;
+  if (v === undefined) return 'undefined';
+  if (v === null) return 'null';
+  if (typeof v === 'number' || typeof v === 'boolean') return String(v);
+  try { return JSON.stringify(v); } catch (e) { return String(v); }
+}
+async function runJsCode(code) {
+  let output = '';
+  const log = (...args) => { output += args.map(formatJsValue).join(' ') + '\n'; };
+  const fakeConsole = { log, error: log, warn: log, info: log };
+  try {
+    const fn = new AsyncFunction('console', code);
+    await fn(fakeConsole);
+    return { ok: true, output: output.trim() };
+  } catch (e) {
+    return { ok: false, output: output.trim(), error: String((e && e.message) || e) };
+  }
+}
+
+// Java/C++/C have no in-browser runtime — they compile & run via Judge0's public demo API
+// (ce.judge0.com, no key required). This is an unofficial demo instance with no uptime
+// SLA, unlike Pyodide/native-JS; network or service failures surface as a normal run error.
+const JUDGE0_BASE = 'https://ce.judge0.com';
+const JUDGE0_LANGUAGE_IDS = { java: 91, cpp: 105, c: 103 };
+async function runViaJudge0(lang, code, onStatus) {
+  if (onStatus) onStatus('Compiling & running via Judge0…');
+  try {
+    const res = await fetch(`${JUDGE0_BASE}/submissions?base64_encoded=false&wait=true`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ source_code: code, language_id: JUDGE0_LANGUAGE_IDS[lang] }),
+    });
+    if (!res.ok) throw new Error(`Judge0 returned ${res.status}`);
+    const data = await res.json();
+    const statusId = data.status && data.status.id;
+    if (statusId === 6) {
+      return { ok: false, output: '', error: data.compile_output || 'Compilation failed' };
+    }
+    const ok = statusId === 3;
+    return { ok, output: (data.stdout || '').trim(), error: ok ? undefined : (data.stderr || data.message || 'Runtime error') };
+  } catch (e) {
+    return { ok: false, output: '', error: 'Could not reach the code execution service — check your internet connection. (' + (e.message || e) + ')' };
+  }
+}
+const runJavaCode = (code, onStatus) => runViaJudge0('java', code, onStatus);
+const runCppCode = (code, onStatus) => runViaJudge0('cpp', code, onStatus);
+const runCCode = (code, onStatus) => runViaJudge0('c', code, onStatus);
+
+// Per-language code-exercise runtime: editor chrome + which sandbox executes the code.
+const CODE_RUNTIME = {
+  python: { filename: 'main.py', label: 'PYTHON (Pyodide)', run: runPythonCode, commentPrefix: '#' },
+  javascript: { filename: 'main.js', label: 'JAVASCRIPT (native)', run: (code) => runJsCode(code), commentPrefix: '//' },
+  java: { filename: 'Main.java', label: 'JAVA (Judge0)', run: runJavaCode, commentPrefix: '//' },
+  cpp: { filename: 'main.cpp', label: 'C++ (Judge0)', run: runCppCode, commentPrefix: '//' },
+  c: { filename: 'main.c', label: 'C (Judge0)', run: runCCode, commentPrefix: '//' },
+};
+
 function shuffle(arr) {
   const a = arr.slice();
   for (let i = a.length - 1; i > 0; i--) {
@@ -56,18 +118,19 @@ function pickQuestions(lesson, count) {
   return [...requiredQs, ...pickedOthers, ...pickedCode];
 }
 
-function stripPyComments(code) {
+function stripLineComments(code, lang) {
+  const prefix = (CODE_RUNTIME[lang] && CODE_RUNTIME[lang].commentPrefix) || '#';
   return code.split('\n').map(line => {
-    const idx = line.indexOf('#');
+    const idx = line.indexOf(prefix);
     return idx === -1 ? line : line.slice(0, idx);
   }).join('\n');
 }
 
 // Guards against typing the literal expected output instead of computing it
 // (e.g. `print(12)` instead of `print(4 * 3)`).
-function hasRequiredTokens(code, mustContain) {
+function hasRequiredTokens(code, mustContain, lang) {
   if (!mustContain || !mustContain.length) return true;
-  const stripped = stripPyComments(code);
+  const stripped = stripLineComments(code, lang);
   return mustContain.every(tok => stripped.includes(tok));
 }
 
@@ -337,11 +400,12 @@ class LessonEngine {
   }
 
   renderCode(body, q) {
+    const rt = CODE_RUNTIME[this.lang] || CODE_RUNTIME.python;
     body.innerHTML = `
       <div class="q-card">
         ${this.questionHeader('Code Exercise', q.prompt)}
         <div class="code-editor">
-          <div class="ce-head"><span>main.py</span><span>PYTHON (Pyodide)</span></div>
+          <div class="ce-head"><span>${rt.filename}</span><span>${rt.label}</span></div>
           <textarea class="code-input" id="code-in" spellcheck="false">${escapeHtml(q.starter || '')}</textarea>
         </div>
         <div class="run-row">
@@ -365,11 +429,11 @@ class LessonEngine {
       statusEl.textContent = 'Running…';
       outputEl.style.display = 'none';
       const code = body.querySelector('#code-in').value;
-      const result = await runPythonCode(code, (msg) => { statusEl.textContent = msg; });
+      const result = await rt.run(code, (msg) => { statusEl.textContent = msg; });
       runBtn.disabled = false;
       statusEl.textContent = '';
       const outputMatches = result.ok && result.output.trim() === q.expected.trim();
-      const usesRequiredLogic = hasRequiredTokens(code, q.mustContain);
+      const usesRequiredLogic = hasRequiredTokens(code, q.mustContain, this.lang);
       if (outputMatches && usesRequiredLogic) {
         solved = true;
         outputEl.style.display = 'block';

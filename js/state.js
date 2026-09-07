@@ -2,7 +2,10 @@
 
 const STORAGE_KEY = 'syntaxed_state_v1';
 const MEMORY_MAX = 5;
-const AVATAR_ICONS = { beetle: ['🐞','🪲','🐛'], robot: ['🤖','🦾','👾'] };
+const AVATAR_ICONS = {
+  beetle: ['Ladybug', 'Doodle Bug', 'Cyber Beetle', 'Roly Bug', 'Spike Bug'],
+  robot: ['Classic Bot', 'Round Bot', 'Visor Bot', 'Antenna Bot', 'Heart Bot'],
+};
 const AVATAR_COLORS = ['#37f2ff', '#ff3fd8', '#3dffa0', '#ffcc4d', '#9d7bff'];
 
 // ---- Animated mascot characters (blinking eyes, talking mouth) ----
@@ -14,10 +17,19 @@ function renderCharacter(avatar, size) {
   return `<div class="char char-${avatar && avatar.kind === 'robot' ? 'robot' : 'beetle'}" style="width:${size}px;height:${size}px;">${bodyHtml}</div>`;
 }
 
+// Shared eye helper: white-sclera cartoon eye with a pupil, wrapped for blink animation.
+function beetleEye(cx, cy, r) {
+  r = r || 12;
+  return `<g class="char-eye" style="transform-origin:${cx}px ${cy}px;"><circle cx="${cx}" cy="${cy}" r="${r}" fill="#fff"/><circle cx="${cx}" cy="${cy + 1}" r="${Math.round(r * 0.5)}" fill="#0a0a12"/></g>`;
+}
+
 function beetleCharSvg(color, variant) {
-  const spotCount = variant + 1;
-  const spotPositions = [[38, 46], [62, 46], [50, 66]].slice(0, spotCount);
-  const spots = spotPositions.map(([x, y]) => `<circle cx="${x}" cy="${y}" r="4" fill="#0a0a12" opacity=".35"/>`).join('');
+  const builders = [beetleLadybug, beetleDoodle, beetleCyber, beetleRoly, beetleSpike];
+  return (builders[variant] || beetleLadybug)(color);
+}
+
+// Variant 0 — Ladybug: classic round body, two spots, rosy cheeks, gentle smile.
+function beetleLadybug(color) {
   return `
     <svg viewBox="0 0 100 100" width="100%" height="100%">
       <line x1="38" y1="26" x2="26" y2="8" stroke="${color}" stroke-width="4" stroke-linecap="round"/>
@@ -26,26 +38,175 @@ function beetleCharSvg(color, variant) {
       <circle cx="74" cy="8" r="4" fill="${color}"/>
       <ellipse cx="50" cy="58" rx="38" ry="34" fill="${color}"/>
       <path d="M12 58 A38 34 0 0 0 88 58 Z" fill="#000" opacity=".14"/>
-      ${spots}
-      <g class="char-eye" style="transform-origin:36px 52px;"><circle cx="36" cy="52" r="12" fill="#fff"/><circle cx="36" cy="53" r="6" fill="#0a0a12"/></g>
-      <g class="char-eye" style="transform-origin:64px 52px;"><circle cx="64" cy="52" r="12" fill="#fff"/><circle cx="64" cy="53" r="6" fill="#0a0a12"/></g>
-      <ellipse class="char-mouth" cx="50" cy="78" rx="9" ry="3" fill="#0a0a12" style="transform-origin:50px 78px;"/>
+      <circle cx="38" cy="46" r="4" fill="#0a0a12" opacity=".35"/>
+      <circle cx="62" cy="46" r="4" fill="#0a0a12" opacity=".35"/>
+      <ellipse cx="27" cy="66" rx="6" ry="4" fill="#ff9bc8" opacity=".55"/>
+      <ellipse cx="73" cy="66" rx="6" ry="4" fill="#ff9bc8" opacity=".55"/>
+      ${beetleEye(36, 52, 12)}
+      ${beetleEye(64, 52, 12)}
+      <path class="char-mouth" d="M40 76 Q50 84 60 76" stroke="#0a0a12" stroke-width="4" fill="none" stroke-linecap="round" style="transform-origin:50px 78px;"/>
+    </svg>`;
+}
+
+// Variant 1 — Doodle Bug: big eyes, wide open grin, three spots, wavy antennae.
+function beetleDoodle(color) {
+  return `
+    <svg viewBox="0 0 100 100" width="100%" height="100%">
+      <path d="M38 26 Q28 18 24 6" stroke="${color}" stroke-width="4" fill="none" stroke-linecap="round"/>
+      <path d="M62 26 Q72 18 76 6" stroke="${color}" stroke-width="4" fill="none" stroke-linecap="round"/>
+      <circle cx="24" cy="6" r="4" fill="${color}"/>
+      <circle cx="76" cy="6" r="4" fill="${color}"/>
+      <ellipse cx="50" cy="58" rx="38" ry="34" fill="${color}"/>
+      <path d="M12 58 A38 34 0 0 0 88 58 Z" fill="#000" opacity=".14"/>
+      <circle cx="38" cy="46" r="4" fill="#0a0a12" opacity=".3"/>
+      <circle cx="62" cy="46" r="4" fill="#0a0a12" opacity=".3"/>
+      <circle cx="50" cy="66" r="4" fill="#0a0a12" opacity=".3"/>
+      ${beetleEye(35, 50, 14)}
+      ${beetleEye(65, 50, 14)}
+      <path class="char-mouth" d="M38 74 Q50 92 62 74 Z" fill="#0a0a12" style="transform-origin:50px 80px;"/>
+    </svg>`;
+}
+
+// Variant 2 — Cyber Beetle: tech visor eyes, chevron shell panels, confident smirk.
+function beetleCyber(color) {
+  return `
+    <svg viewBox="0 0 100 100" width="100%" height="100%">
+      <line x1="38" y1="26" x2="30" y2="10" stroke="${color}" stroke-width="4" stroke-linecap="round"/>
+      <line x1="62" y1="26" x2="70" y2="10" stroke="${color}" stroke-width="4" stroke-linecap="round"/>
+      <rect x="27" y="7" width="6" height="6" fill="${color}"/>
+      <rect x="67" y="7" width="6" height="6" fill="${color}"/>
+      <ellipse cx="50" cy="58" rx="38" ry="34" fill="${color}"/>
+      <path d="M12 58 A38 34 0 0 0 88 58 Z" fill="#000" opacity=".14"/>
+      <path d="M24 44 Q50 36 76 44" stroke="#0a0a12" stroke-width="3" fill="none" opacity=".3"/>
+      <path d="M20 56 Q50 47 80 56" stroke="#0a0a12" stroke-width="3" fill="none" opacity=".3"/>
+      <rect x="26" y="44" width="48" height="16" rx="8" fill="#0a0a12"/>
+      <g class="char-eye" style="transform-origin:38px 52px;"><circle cx="38" cy="52" r="5" fill="${color}"/></g>
+      <g class="char-eye" style="transform-origin:62px 52px;"><circle cx="62" cy="52" r="5" fill="${color}"/></g>
+      <path class="char-mouth" d="M42 78 Q52 83 61 76" stroke="#0a0a12" stroke-width="4" fill="none" stroke-linecap="round" style="transform-origin:50px 78px;"/>
+    </svg>`;
+}
+
+// Variant 3 — Roly Bug: extra-plump body, big blush, wide happy laugh.
+function beetleRoly(color) {
+  return `
+    <svg viewBox="0 0 100 100" width="100%" height="100%">
+      <path d="M40 24 Q30 18 32 8" stroke="${color}" stroke-width="4" fill="none" stroke-linecap="round"/>
+      <path d="M60 24 Q70 18 68 8" stroke="${color}" stroke-width="4" fill="none" stroke-linecap="round"/>
+      <circle cx="32" cy="8" r="5" fill="${color}"/>
+      <circle cx="68" cy="8" r="5" fill="${color}"/>
+      <ellipse cx="50" cy="60" rx="44" ry="36" fill="${color}"/>
+      <path d="M8 60 A44 36 0 0 0 92 60 Z" fill="#000" opacity=".12"/>
+      <ellipse cx="24" cy="70" rx="8" ry="5" fill="#ff9bc8" opacity=".6"/>
+      <ellipse cx="76" cy="70" rx="8" ry="5" fill="#ff9bc8" opacity=".6"/>
+      ${beetleEye(37, 54, 11)}
+      ${beetleEye(63, 54, 11)}
+      <ellipse class="char-mouth" cx="50" cy="80" rx="14" ry="7" fill="#0a0a12" style="transform-origin:50px 80px;"/>
+    </svg>`;
+}
+
+// Variant 4 — Spike Bug: head horn, determined brows, toothy grin, diamond spots.
+function beetleSpike(color) {
+  return `
+    <svg viewBox="0 0 100 100" width="100%" height="100%">
+      <line x1="38" y1="26" x2="26" y2="8" stroke="${color}" stroke-width="4" stroke-linecap="round"/>
+      <line x1="62" y1="26" x2="74" y2="8" stroke="${color}" stroke-width="4" stroke-linecap="round"/>
+      <circle cx="26" cy="8" r="4" fill="${color}"/>
+      <circle cx="74" cy="8" r="4" fill="${color}"/>
+      <ellipse cx="50" cy="58" rx="38" ry="34" fill="${color}"/>
+      <path d="M12 58 A38 34 0 0 0 88 58 Z" fill="#000" opacity=".14"/>
+      <polygon points="50,20 44,34 56,34" fill="${color}"/>
+      <circle cx="50" cy="40" r="3.5" fill="#0a0a12" opacity=".35"/>
+      <circle cx="36" cy="60" r="3.5" fill="#0a0a12" opacity=".35"/>
+      <circle cx="64" cy="60" r="3.5" fill="#0a0a12" opacity=".35"/>
+      <circle cx="50" cy="70" r="3.5" fill="#0a0a12" opacity=".35"/>
+      <line x1="29" y1="42" x2="41" y2="46" stroke="#0a0a12" stroke-width="3" stroke-linecap="round" opacity=".6"/>
+      <line x1="71" y1="42" x2="59" y2="46" stroke="#0a0a12" stroke-width="3" stroke-linecap="round" opacity=".6"/>
+      ${beetleEye(36, 54, 11)}
+      ${beetleEye(64, 54, 11)}
+      <path class="char-mouth" d="M39 76 Q50 88 61 76 Z" fill="#0a0a12" style="transform-origin:50px 80px;"/>
+      <polygon points="47,77 53,77 50,83" fill="#fff"/>
     </svg>`;
 }
 
 function robotCharSvg(color, variant) {
-  const eyeRx = [2, 6, 8][variant] ?? 4;
+  const builders = [robotClassic, robotRound, robotVisor, robotAntenna, robotHeart];
+  return (builders[variant] || robotClassic)(color);
+}
+
+// Variant 0 — Classic Bot: square head, block eyes, equalizer-bar mouth.
+function robotClassic(color) {
   return `
     <svg viewBox="0 0 100 100" width="100%" height="100%">
       <line x1="50" y1="4" x2="50" y2="16" stroke="${color}" stroke-width="4" stroke-linecap="round"/>
       <circle cx="50" cy="4" r="5" fill="${color}"/>
       <rect x="16" y="16" width="68" height="64" rx="18" fill="var(--panel-2)" stroke="${color}" stroke-width="4"/>
-      <g class="char-eye" style="transform-origin:38px 46px;"><rect x="30" y="38" width="16" height="16" rx="${eyeRx}" fill="${color}"/></g>
-      <g class="char-eye" style="transform-origin:62px 46px;"><rect x="54" y="38" width="16" height="16" rx="${eyeRx}" fill="${color}"/></g>
+      <g class="char-eye" style="transform-origin:38px 46px;"><rect x="30" y="38" width="16" height="16" rx="4" fill="${color}"/></g>
+      <g class="char-eye" style="transform-origin:62px 46px;"><rect x="54" y="38" width="16" height="16" rx="4" fill="${color}"/></g>
       <rect class="char-mouth-bar" x="34" y="66" width="6" height="8" rx="2" fill="${color}" style="transform-origin:37px 74px;"/>
       <rect class="char-mouth-bar" x="44" y="66" width="6" height="8" rx="2" fill="${color}" style="transform-origin:47px 74px;"/>
       <rect class="char-mouth-bar" x="54" y="66" width="6" height="8" rx="2" fill="${color}" style="transform-origin:57px 74px;"/>
       <rect class="char-mouth-bar" x="64" y="66" width="6" height="8" rx="2" fill="${color}" style="transform-origin:67px 74px;"/>
+    </svg>`;
+}
+
+// Variant 1 — Round Bot: domed head, oval friendly eyes, soft smile curve.
+function robotRound(color) {
+  return `
+    <svg viewBox="0 0 100 100" width="100%" height="100%">
+      <line x1="50" y1="6" x2="50" y2="18" stroke="${color}" stroke-width="4" stroke-linecap="round"/>
+      <circle cx="50" cy="6" r="5" fill="${color}"/>
+      <circle cx="50" cy="52" r="36" fill="var(--panel-2)" stroke="${color}" stroke-width="4"/>
+      <g class="char-eye" style="transform-origin:38px 46px;"><ellipse cx="38" cy="46" rx="8" ry="10" fill="${color}"/></g>
+      <g class="char-eye" style="transform-origin:62px 46px;"><ellipse cx="62" cy="46" rx="8" ry="10" fill="${color}"/></g>
+      <path class="char-mouth" d="M36 68 Q50 80 64 68" stroke="${color}" stroke-width="4" fill="none" stroke-linecap="round" style="transform-origin:50px 72px;"/>
+    </svg>`;
+}
+
+// Variant 2 — Visor Bot: full-width visor band, glowing pupil dots, speaker grille.
+function robotVisor(color) {
+  return `
+    <svg viewBox="0 0 100 100" width="100%" height="100%">
+      <line x1="50" y1="4" x2="50" y2="16" stroke="${color}" stroke-width="4" stroke-linecap="round"/>
+      <circle cx="50" cy="4" r="5" fill="${color}"/>
+      <rect x="16" y="16" width="68" height="64" rx="18" fill="var(--panel-2)" stroke="${color}" stroke-width="4"/>
+      <rect x="24" y="38" width="52" height="20" rx="10" fill="#0a0a12"/>
+      <g class="char-eye" style="transform-origin:38px 48px;"><circle cx="38" cy="48" r="5" fill="${color}"/></g>
+      <g class="char-eye" style="transform-origin:62px 48px;"><circle cx="62" cy="48" r="5" fill="${color}"/></g>
+      <rect class="char-mouth-bar" x="38" y="68" width="6" height="10" rx="2" fill="${color}" style="transform-origin:41px 73px;"/>
+      <rect class="char-mouth-bar" x="47" y="68" width="6" height="10" rx="2" fill="${color}" style="transform-origin:50px 73px;"/>
+      <rect class="char-mouth-bar" x="56" y="68" width="6" height="10" rx="2" fill="${color}" style="transform-origin:59px 73px;"/>
+    </svg>`;
+}
+
+// Variant 3 — Antenna Bot: twin antennae, diamond eyes, open smiling trapezoid mouth.
+function robotAntenna(color) {
+  return `
+    <svg viewBox="0 0 100 100" width="100%" height="100%">
+      <line x1="28" y1="18" x2="20" y2="6" stroke="${color}" stroke-width="4" stroke-linecap="round"/>
+      <line x1="72" y1="18" x2="80" y2="6" stroke="${color}" stroke-width="4" stroke-linecap="round"/>
+      <circle cx="20" cy="6" r="5" fill="${color}"/>
+      <polygon points="80,1 85,6 80,11 75,6" fill="${color}"/>
+      <rect x="18" y="18" width="64" height="60" rx="16" fill="var(--panel-2)" stroke="${color}" stroke-width="4"/>
+      <g class="char-eye" style="transform-origin:38px 46px;"><polygon points="38,35 48,46 38,57 28,46" fill="${color}"/></g>
+      <g class="char-eye" style="transform-origin:62px 46px;"><polygon points="62,35 72,46 62,57 52,46" fill="${color}"/></g>
+      <path class="char-mouth" d="M36 68 L64 68 L58 78 L42 78 Z" fill="${color}" style="transform-origin:50px 73px;"/>
+    </svg>`;
+}
+
+// Variant 4 — Heart Bot: rounded friendly head, heart-shaped eyes, big warm smile.
+function robotHeart(color) {
+  return `
+    <svg viewBox="0 0 100 100" width="100%" height="100%">
+      <line x1="50" y1="6" x2="50" y2="18" stroke="${color}" stroke-width="4" stroke-linecap="round"/>
+      <circle cx="50" cy="6" r="5" fill="${color}"/>
+      <rect x="20" y="18" width="60" height="58" rx="22" fill="var(--panel-2)" stroke="${color}" stroke-width="4"/>
+      <g class="char-eye" style="transform-origin:38px 48px;">
+        <circle cx="34" cy="45" r="6" fill="${color}"/><circle cx="42" cy="45" r="6" fill="${color}"/><polygon points="28,49 48,49 38,61" fill="${color}"/>
+      </g>
+      <g class="char-eye" style="transform-origin:62px 48px;">
+        <circle cx="58" cy="45" r="6" fill="${color}"/><circle cx="66" cy="45" r="6" fill="${color}"/><polygon points="52,49 72,49 62,61" fill="${color}"/>
+      </g>
+      <path class="char-mouth" d="M35 68 Q50 82 65 68" stroke="${color}" stroke-width="5" fill="none" stroke-linecap="round" style="transform-origin:50px 72px;"/>
     </svg>`;
 }
 
@@ -56,8 +217,21 @@ function defaultLangState() {
     memory: { current: MEMORY_MAX, max: MEMORY_MAX },
     completed: {},        // lessonId -> { xp, testedOut, completedAt }
     testOutAttempts: {},  // targetLessonId -> { count, cooldownUntil }
+    certNotified: {},     // certCheckpointId -> true, once we've announced readiness
   };
 }
+
+// The five launch languages — order drives every "More Languages" / marketing list in the UI.
+const LANGUAGES = [
+  { id: 'python', label: 'Python', badge: 'PY' },
+  { id: 'javascript', label: 'JavaScript', badge: 'JS' },
+  { id: 'java', label: 'Java', badge: 'JV' },
+  { id: 'cpp', label: 'C++', badge: 'C++' },
+  { id: 'c', label: 'C', badge: 'C' },
+];
+function languageMeta(lang) { return LANGUAGES.find(l => l.id === lang) || LANGUAGES[0]; }
+// A language is playable in the UI once its curriculum has at least one real lesson.
+function languageIsLive(lang) { return Object.keys(curriculum(lang).LESSONS || {}).length > 0; }
 
 function defaultState() {
   return {
@@ -82,7 +256,10 @@ function load() {
     const merged = { ...base, ...parsed };
     merged.avatar = { ...base.avatar, ...(parsed.avatar || {}) };
     merged.languages = merged.languages || {};
-    Object.keys(base.languages).forEach(k => {
+    // Merge defaults into every language we've ever saved, not just the ones defaultState
+    // seeds — otherwise progress in a language added after a user's first save would miss
+    // newly-introduced fields (like certNotified).
+    new Set([...Object.keys(base.languages), ...Object.keys(merged.languages)]).forEach(k => {
       merged.languages[k] = { ...defaultLangState(), ...(merged.languages[k] || {}) };
     });
     return merged;
@@ -100,6 +277,11 @@ function getLangState(lang) {
   lang = lang || STATE.currentLanguage;
   if (!STATE.languages[lang]) STATE.languages[lang] = defaultLangState();
   return STATE.languages[lang];
+}
+
+function setLanguage(lang) {
+  STATE.currentLanguage = lang;
+  save();
 }
 
 function setTheme(theme) {
@@ -191,7 +373,7 @@ function isLessonComplete(lang, lessonId) {
 // available | locked | complete
 function lessonStatus(lang, lessonId) {
   if (isLessonComplete(lang, lessonId)) return 'complete';
-  const prereqs = PREREQS[lessonId] || [];
+  const prereqs = curriculum(lang).PREREQS[lessonId] || [];
   const allDone = prereqs.every(p => isLessonComplete(lang, p));
   return allDone ? 'available' : 'locked';
 }
