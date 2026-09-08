@@ -14,6 +14,7 @@ const TABS = [
 ];
 
 function render() {
+  closeInfoBubble();
   const parts = parseRoute();
   const route = parts[0] || 'home';
   const root = document.getElementById('app');
@@ -43,15 +44,84 @@ function render() {
 window.addEventListener('hashchange', render);
 window.addEventListener('DOMContentLoaded', render);
 
+// ---------------- Stat info bubbles (click an XP/Uptime/Memory pill, or the logo for all three) ----------------
+const STAT_INFO = {
+  xp: {
+    icon: '⭐', title: 'XP — Experience Points',
+    body: "Earned by finishing lessons and quizzes. A first-time pass earns full XP; testing out early earns half. XP only ever goes up — it's a running total, not something you can lose.",
+  },
+  uptime: {
+    icon: '🔥', title: 'Uptime — your streak',
+    body: "Tracked separately for every language. Finish or review at least one lesson today and it climbs by 1. Miss a full day and it drops back down to 1 next time you're active.",
+  },
+  memory: {
+    icon: '🔋', title: "Memory — this app's lives",
+    body: "Five RAM sticks per language, standing in for hearts. A wrong answer spends 1; revealing the raw error on a code exercise spends 1 more. Hit zero and you're locked out of new lessons until you replay one you've already finished in Review Mode — that refills Memory for free.",
+  },
+};
+
+let activeInfoBubble = null;
+let activeInfoAnchor = null;
+
+function closeInfoBubble() {
+  if (activeInfoBubble) activeInfoBubble.remove();
+  activeInfoBubble = null;
+  activeInfoAnchor = null;
+  document.removeEventListener('click', onDocClickCloseInfoBubble);
+  window.removeEventListener('scroll', closeInfoBubble, true);
+}
+
+function onDocClickCloseInfoBubble(e) {
+  if (activeInfoBubble && !activeInfoBubble.contains(e.target) && e.target !== activeInfoAnchor) closeInfoBubble();
+}
+
+function showInfoBubble(anchor, keys) {
+  const reopeningSame = activeInfoAnchor === anchor;
+  closeInfoBubble();
+  if (reopeningSame) return; // treat a second click on the same pill as toggle-off
+
+  const bubble = document.createElement('div');
+  bubble.className = 'info-bubble';
+  bubble.innerHTML = keys.map(k => {
+    const info = STAT_INFO[k];
+    return `<div class="info-bubble-item"><div class="info-bubble-title">${info.icon} ${escapeHtml(info.title)}</div><p>${escapeHtml(info.body)}</p></div>`;
+  }).join('<hr class="info-bubble-sep">');
+  document.body.appendChild(bubble);
+
+  const r = anchor.getBoundingClientRect();
+  const bw = Math.min(300, window.innerWidth - 24);
+  bubble.style.width = bw + 'px';
+  let left = r.left + r.width / 2 - bw / 2;
+  left = Math.max(12, Math.min(left, window.innerWidth - bw - 12));
+  bubble.style.left = left + 'px';
+  bubble.style.top = Math.min(r.bottom + 10, window.innerHeight - 20) + 'px';
+  bubble.style.setProperty('--arrow-left', (r.left + r.width / 2 - left) + 'px');
+
+  requestAnimationFrame(() => bubble.classList.add('open'));
+  activeInfoBubble = bubble;
+  activeInfoAnchor = anchor;
+  setTimeout(() => {
+    document.addEventListener('click', onDocClickCloseInfoBubble);
+    window.addEventListener('scroll', closeInfoBubble, true);
+  }, 0);
+}
+
+document.addEventListener('click', (e) => {
+  const el = e.target.closest('[data-info]');
+  if (!el) return;
+  showInfoBubble(el, [el.dataset.info]);
+});
+
 function renderTopBar() {
   const lang = getState().currentLanguage;
   const ls = getLangState(lang);
   return `
     <div class="app-topbar"><div class="app-topbar-inner">
-      <span class="topbar-brand">🐞 Syntaxed</span>
+      <a class="topbar-brand" href="#/home">🐞 Syntaxed</a>
       <div class="topbar-stats">
-        <span class="ts-pill uptime">🔥 ${ls.uptime.current}</span>
-        <span class="ts-pill xp">⭐ ${ls.xp}</span>
+        <button class="ts-pill uptime" type="button" data-info="uptime">🔥 ${ls.uptime.current}</button>
+        <button class="ts-pill xp" type="button" data-info="xp">⭐ ${ls.xp}</button>
+        <button class="ts-pill memory" type="button" data-info="memory">🔋 ${ls.memory.current}</button>
       </div>
     </div></div>`;
 }
@@ -129,9 +199,9 @@ function renderAbout(main) {
 function statsRowHtml(ls) {
   return `
     <div class="stat-row">
-      <div class="stat-chip xp">⭐ XP <span class="val">${ls.xp}</span></div>
-      <div class="stat-chip uptime">🔥 Uptime <span class="val">${ls.uptime.current}d</span></div>
-      <div class="stat-chip memory">🔋 ${renderRam(ls.memory.current, ls.memory.max)}</div>
+      <button class="stat-chip xp" type="button" data-info="xp">⭐ XP <span class="val">${ls.xp}</span></button>
+      <button class="stat-chip uptime" type="button" data-info="uptime">🔥 Uptime <span class="val">${ls.uptime.current}d</span></button>
+      <button class="stat-chip memory" type="button" data-info="memory">🔋 ${renderRam(ls.memory.current, ls.memory.max)}</button>
     </div>`;
 }
 
@@ -561,6 +631,10 @@ function startLessonRoute(root, lessonId, reviewMode) {
     setTimeout(() => showOutOfMemoryModal(lang), 30);
     return;
   }
+  if (!reviewMode && !getState().statsIntroSeen) {
+    startStatsOrientation(root, () => startLessonRoute(root, lessonId, reviewMode));
+    return;
+  }
   new LessonEngine({
     lesson, lang, container: root, reviewMode,
     onExit: () => navigate('#/path'),
@@ -670,16 +744,16 @@ function renderSettings(main) {
   const opts = AVATAR_ICONS[st.avatar.kind];
   main.querySelector('#avatar-options').innerHTML = opts.map((name, i) =>
     `<button class="avatar-opt ${i === st.avatar.variant ? 'selected' : ''}" data-i="${i}" title="${escapeHtml(name)}">
-       ${renderCharacter({ kind: st.avatar.kind, variant: i, color: st.avatar.color }, 44)}
+       ${renderCharacter({ kind: st.avatar.kind, variant: i }, 44)}
        <span class="avatar-opt-label">${escapeHtml(name)}</span>
      </button>`).join('');
-  main.querySelector('#swatches').innerHTML = AVATAR_COLORS.map(c =>
-    `<button class="swatch ${c === st.avatar.color ? 'selected' : ''}" data-c="${c}" style="background:${c}"></button>`).join('');
+  main.querySelector('#swatches').innerHTML = ACCENT_COLORS.map(c =>
+    `<button class="swatch ${c === st.accent ? 'selected' : ''}" data-c="${c}" style="background:${c}"></button>`).join('');
 
-  [...main.querySelectorAll('.avatar-opt')].forEach(b => b.onclick = () => { setAvatar(st.avatar.kind, Number(b.dataset.i), st.avatar.color); renderSettings(main); });
-  [...main.querySelectorAll('.swatch')].forEach(b => b.onclick = () => { setAvatar(st.avatar.kind, st.avatar.variant, b.dataset.c); renderSettings(main); });
-  main.querySelector('#kind-beetle').onclick = () => { setAvatar('beetle', 0, st.avatar.color); renderSettings(main); };
-  main.querySelector('#kind-robot').onclick = () => { setAvatar('robot', 0, st.avatar.color); renderSettings(main); };
+  [...main.querySelectorAll('.avatar-opt')].forEach(b => b.onclick = () => { setAvatar(st.avatar.kind, Number(b.dataset.i)); renderSettings(main); });
+  [...main.querySelectorAll('.swatch')].forEach(b => b.onclick = () => { setAccent(b.dataset.c); renderSettings(main); });
+  main.querySelector('#kind-beetle').onclick = () => { setAvatar('beetle', 0); renderSettings(main); };
+  main.querySelector('#kind-robot').onclick = () => { setAvatar('robot', 0); renderSettings(main); };
   main.querySelector('#theme-toggle').onchange = (e) => setTheme(e.target.checked ? 'dark' : 'light');
   main.querySelector('#reset-btn').onclick = () => {
     if (confirm('Reset all Syntaxed progress? This cannot be undone.')) { resetProgress(); navigate('#/home'); }

@@ -305,12 +305,7 @@ class LessonEngine {
   }
 
   // Briefly animates the mascot's mouth, as if it just spoke the question aloud.
-  animateTalk(body) {
-    const char = body.querySelector('.char');
-    if (!char) return;
-    char.classList.add('talking');
-    setTimeout(() => char.classList.remove('talking'), 1300);
-  }
+  animateTalk(body) { animateCharTalk(body); }
 
   renderMcq(body, q) {
     const opts = q.options.map((opt, i) => `<button class="opt" data-i="${i}">${escapeHtml(opt)}</button>`).join('');
@@ -511,4 +506,108 @@ function renderRam(current, max) {
 
 function escapeHtml(str) {
   return String(str).replace(/[&<>"']/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[s]));
+}
+
+// Briefly animates the mascot's mouth, as if it just spoke aloud.
+function animateCharTalk(body) {
+  const char = body.querySelector('.char');
+  if (!char) return;
+  char.classList.add('talking');
+  setTimeout(() => char.classList.remove('talking'), 1300);
+}
+
+// ---- One-time, account-wide orientation on XP/Uptime/Memory, shown before a person's
+// very first lesson ever (never again, and never just for switching languages). Built
+// from the same visual pieces as a real lesson (q-card, speech bubble, opt-list) so it
+// reads as part of the lesson flow rather than a bolted-on interstitial.
+const STATS_ORIENTATION_SLIDES = [
+  { type: 'say', text: "Before your first lesson — three things you'll see everywhere in Syntaxed." },
+  { type: 'say', text: '⭐ XP is your score. Finish a lesson or quiz and you earn XP. It only ever goes up.' },
+  { type: 'say', text: "🔥 Uptime is your streak for this language. Finish or review one lesson today and it climbs by 1 — skip a full day and it falls back to 1." },
+  { type: 'say', text: "🔋 Memory is this app's spin on lives. You start with 5 RAM sticks, and a wrong answer spends one." },
+  { type: 'say', text: "Run out of Memory and you're locked out of new lessons until you review one you've already finished — that refills it for free." },
+  {
+    type: 'check',
+    prompt: 'Quick check — does getting an answer wrong cost you XP?',
+    options: ['Yes, it does', 'No, it costs Memory instead'],
+    answer: 1,
+    explain: 'Right — a wrong answer spends Memory, not XP. XP only ever goes up.',
+  },
+  {
+    type: 'check',
+    prompt: "Quick check — is Uptime shared across every language you're learning?",
+    options: ['Yes, one shared streak', 'No, each language has its own'],
+    answer: 1,
+    explain: 'Exactly — XP, Uptime, and Memory are all tracked separately per language.',
+  },
+];
+
+function startStatsOrientation(root, onDone) {
+  let i = 0;
+
+  function renderStep() {
+    if (i >= STATS_ORIENTATION_SLIDES.length) {
+      markStatsIntroSeen();
+      onDone();
+      return;
+    }
+    const slide = STATS_ORIENTATION_SLIDES[i];
+    const pct = Math.round((i / STATS_ORIENTATION_SLIDES.length) * 100);
+    root.innerHTML = `
+      <div class="lesson-shell">
+        <div class="lesson-top">
+          <button class="btn btn-ghost btn-sm" id="orient-exit">✕ Exit</button>
+          <div class="lesson-progress"><span style="width:${pct}%"></span></div>
+        </div>
+        <div id="lesson-body"></div>
+      </div>`;
+    root.querySelector('#orient-exit').onclick = () => navigate('#/home');
+    const body = root.querySelector('#lesson-body');
+
+    if (slide.type === 'say') {
+      const next = STATS_ORIENTATION_SLIDES[i + 1];
+      const isLastSay = !next || next.type !== 'say';
+      body.innerHTML = `
+        <div class="q-card">
+          <div class="q-kicker">Getting Started</div>
+          <div class="character-row">
+            ${renderCharacter(getState().avatar, 62)}
+            <div class="speech-bubble">${escapeHtml(slide.text)}</div>
+          </div>
+          <div class="dialogue-dots">${STATS_ORIENTATION_SLIDES.map((_, k) => `<span class="dot ${k === i ? 'active' : ''}"></span>`).join('')}</div>
+          <button class="btn btn-primary btn-block" id="orient-next">${isLastSay ? 'One sec, quick check ▸' : 'Continue ▸'}</button>
+        </div>`;
+      animateCharTalk(body);
+      body.querySelector('#orient-next').onclick = () => { i += 1; renderStep(); };
+    } else {
+      body.innerHTML = `
+        <div class="q-card">
+          <div class="q-kicker">Quick Check</div>
+          <div class="character-row">
+            ${renderCharacter(getState().avatar, 62)}
+            <div class="speech-bubble">${escapeHtml(slide.prompt)}</div>
+          </div>
+          <div class="opt-list">${slide.options.map((opt, idx) => `<button class="opt" data-i="${idx}">${escapeHtml(opt)}</button>`).join('')}</div>
+          <div class="feedback-box" id="fb"></div>
+          <div class="lesson-footer"><button class="btn btn-primary" id="next-btn" style="display:none">Continue ▸</button></div>
+        </div>`;
+      animateCharTalk(body);
+      const buttons = [...body.querySelectorAll('.opt')];
+      buttons.forEach(btn => btn.onclick = () => {
+        buttons.forEach(b => b.disabled = true);
+        const idx = Number(btn.dataset.i);
+        const correct = idx === slide.answer;
+        btn.classList.add(correct ? 'correct' : 'incorrect');
+        if (!correct) buttons[slide.answer].classList.add('correct');
+        const fb = body.querySelector('#fb');
+        fb.className = `feedback-box show ${correct ? 'ok' : 'err'}`;
+        fb.innerHTML = `${correct ? '✔' : '✕'} ${escapeHtml(slide.explain)}`;
+        const nextBtn = body.querySelector('#next-btn');
+        nextBtn.style.display = 'inline-flex';
+        nextBtn.onclick = () => { i += 1; renderStep(); };
+      });
+    }
+  }
+
+  renderStep();
 }
