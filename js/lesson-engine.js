@@ -133,6 +133,30 @@ function stripLineComments(code, lang) {
   }).join('\n');
 }
 
+// Common ways different languages print output — used to nudge a hint if nothing
+// in the user's code looks like it would actually display the result.
+const OUTPUT_KEYWORDS = ['print', 'console.log', 'System.out', 'cout', 'printf'];
+
+// Builds a hint from what the person has actually typed so far, checked in order
+// from "haven't started" to "almost there" — re-evaluated fresh every time Hint is
+// clicked, so it stays relevant even if they've edited their code since the last run.
+function generateCodeHint(userCode, q, lang) {
+  const stripped = stripLineComments(userCode || '', lang).trim();
+  if (!stripped || /your code here/i.test(userCode || '')) {
+    return "Looks like the starter comment is still there — replace it with your own code.";
+  }
+  const missing = (q.mustContain || []).filter(tok => !stripped.includes(tok));
+  if (missing.length) {
+    const list = missing.map(t => `<code>${escapeHtml(t)}</code>`).join(' and ');
+    return `Your code doesn't use ${list} yet — that's what this exercise is testing.`;
+  }
+  if (q.expected && q.expected.trim() && !OUTPUT_KEYWORDS.some(kw => stripped.includes(kw))) {
+    return "Your code has the right pieces, but nothing seems to print the result — make sure you're actually outputting it.";
+  }
+  if (q.hint) return q.hint;
+  return "The required pieces are there — double-check the exact values and syntax the prompt asks for.";
+}
+
 // Guards against typing the literal expected output instead of computing it
 // (e.g. `print(12)` instead of `print(4 * 3)`).
 function hasRequiredTokens(code, mustContain, lang) {
@@ -443,9 +467,8 @@ class LessonEngine {
         <button class="btn btn-ghost btn-sm" id="hint-btn">💡 Hint</button>
         <button class="btn btn-ghost btn-sm" id="skip-btn">⏭ Skip Question</button>`;
       helpRow.querySelector('#hint-btn').onclick = () => {
-        const hintHtml = q.hint || (q.mustContain && q.mustContain.length
-          ? `Make sure your code actually uses: ${q.mustContain.map(t => `<code>${escapeHtml(t)}</code>`).join(', ')}.`
-          : 'Re-read the prompt closely and check the exact syntax it asks for.');
+        const currentCode = body.querySelector('#code-in').value;
+        const hintHtml = generateCodeHint(currentCode, q, this.lang);
         const hintEl = document.createElement('div');
         hintEl.className = 'code-hint-text';
         hintEl.innerHTML = `💡 ${hintHtml}`;
