@@ -2,6 +2,7 @@
 
 const STORAGE_KEY = 'syntaxed_state_v1';
 const MEMORY_MAX = 5;
+const MEMORY_REGEN_MS = 30 * 60 * 1000; // one RAM stick refills every 30 minutes
 const AVATAR_ICONS = {
   beetle: ['Ladybug', 'Doodle Bug', 'Cyber Beetle', 'Roly Bug', 'Spike Bug'],
   robot: ['Classic Bot', 'Round Bot', 'Visor Bot', 'Antenna Bot', 'Heart Bot'],
@@ -241,7 +242,7 @@ function defaultLangState() {
   return {
     xp: 0,
     uptime: { current: 0, longest: 0, lastActiveDate: null },
-    memory: { current: MEMORY_MAX, max: MEMORY_MAX },
+    memory: { current: MEMORY_MAX, max: MEMORY_MAX, nextRegenAt: null }, // nextRegenAt: ms timestamp the next RAM stick refills at, or null when full
     completed: {},        // lessonId -> { xp, testedOut, completedAt }
     testOutAttempts: {},  // targetLessonId -> { count, cooldownUntil }
     certNotified: {},     // certCheckpointId -> true, once we've announced readiness
@@ -382,6 +383,9 @@ function addXP(lang, amount) {
 function spendMemory(lang) {
   const ls = getLangState(lang);
   ls.memory.current = Math.max(0, ls.memory.current - 1);
+  if (ls.memory.current < ls.memory.max && !ls.memory.nextRegenAt) {
+    ls.memory.nextRegenAt = Date.now() + MEMORY_REGEN_MS;
+  }
   save();
   return ls.memory.current;
 }
@@ -389,8 +393,42 @@ function spendMemory(lang) {
 function gainMemory(lang, amount) {
   const ls = getLangState(lang);
   ls.memory.current = Math.min(ls.memory.max, ls.memory.current + (amount || 1));
+  if (ls.memory.current >= ls.memory.max) ls.memory.nextRegenAt = null;
   save();
   return ls.memory.current;
+}
+
+// Applies any RAM sticks that have finished regenerating since we last checked
+// (looping so a long-away user gets caught up all at once, capped at max), and starts
+// the clock if Memory is short but no timer is running yet. Returns true if the
+// displayed Memory count changed, so callers know whether to re-render.
+function processMemoryRegen(lang) {
+  const ls = getLangState(lang);
+  const mem = ls.memory;
+  if (mem.current >= mem.max) {
+    if (mem.nextRegenAt) { mem.nextRegenAt = null; save(); }
+    return false;
+  }
+  if (!mem.nextRegenAt) { mem.nextRegenAt = Date.now() + MEMORY_REGEN_MS; save(); return false; }
+  let changed = false;
+  while (mem.nextRegenAt && mem.current < mem.max && Date.now() >= mem.nextRegenAt) {
+    mem.current += 1;
+    changed = true;
+    mem.nextRegenAt = mem.current < mem.max ? mem.nextRegenAt + MEMORY_REGEN_MS : null;
+  }
+  if (changed) save();
+  return changed;
+}
+
+// "⏳ 24:07" countdown text for the next RAM stick, or '' when Memory is full / no timer.
+function memoryTimerText(mem) {
+  if (!mem || mem.current >= mem.max || !mem.nextRegenAt) return '';
+  const msLeft = mem.nextRegenAt - Date.now();
+  if (msLeft <= 0) return '';
+  const totalSec = Math.ceil(msLeft / 1000);
+  const mm = Math.floor(totalSec / 60);
+  const ss = totalSec % 60;
+  return `⏳ ${mm}:${String(ss).padStart(2, '0')}`;
 }
 
 // Replaying an already-completed lesson (to refill Memory) doesn't touch XP/records.
@@ -403,11 +441,16 @@ function markLessonComplete(lang, lessonId, opts) {
   const ls = getLangState(lang);
   opts = opts || {};
   const already = ls.completed[lessonId];
-  const fullXp = getLesson(lessonId) ? getLesson(lessonId).xp : 0;
+  const lesson = getLesson(lessonId, lang);
+  const fullXp = lessonXpValue(lesson);
   // Completing a lesson previously earned via test-out only pays out the remaining half.
-  const awardedXp = opts.testedOut
+  const baseAward = opts.testedOut
     ? Math.round(fullXp / 2)
     : fullXp - (already ? already.xp : 0);
+  // Perfect-run bonus only applies to a run that actually paid out XP — otherwise a
+  // completed lesson could be replayed forever for free bonus XP.
+  const bonus = (opts.perfect && baseAward > 0) ? perfectBonusXp(lesson) : 0;
+  const awardedXp = baseAward + bonus;
   ls.completed[lessonId] = {
     xp: (already ? already.xp : 0) + awardedXp,
     testedOut: !!opts.testedOut,

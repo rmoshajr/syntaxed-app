@@ -12,7 +12,47 @@ function randomThemedError() {
   return THEMED_ERRORS[Math.floor(Math.random() * THEMED_ERRORS.length)];
 }
 
-const XP = { LESSON: 10, QUIZ: 20 };
+// Legacy per-object constants (still harmlessly present on lesson/quiz literals below,
+// but award math no longer reads them directly — see lessonXpValue/perfectBonusXp).
+const XP = { LESSON: 10, QUIZ: 50 };
+
+// Most lessons across the curriculum are built from a standard 6-question pool; a
+// lesson with more than that in its own pool counts as "more content" and pays out
+// the higher XP tier.
+const LARGE_LESSON_QUESTION_THRESHOLD = 7;
+
+// Full-completion XP for a lesson/quiz — computed from content size rather than a
+// hand-set field, so it applies uniformly across the whole curriculum.
+function lessonXpValue(lesson) {
+  if (!lesson) return 0;
+  if (lesson.isQuiz) return 50;
+  return (lesson.questions && lesson.questions.length >= LARGE_LESSON_QUESTION_THRESHOLD) ? 15 : 10;
+}
+
+// Small bonus on top of the full award for a mistake-free run.
+function perfectBonusXp(lesson) {
+  if (!lesson) return 0;
+  if (lesson.isQuiz) return 4;
+  return (lesson.questions && lesson.questions.length >= LARGE_LESSON_QUESTION_THRESHOLD) ? 3 : 2;
+}
+
+// Stable content signature for a question, used to guarantee nothing is ever asked
+// twice in the same lesson/quiz/placement/test-out run even when pools are combined
+// from multiple sources (a lesson's own questions + its review bank, etc).
+function questionSignature(q) {
+  return [q.type, q.prompt, JSON.stringify(q.options || q.pairs || null), q.expected || '', q.answer].join('|');
+}
+function dedupeQuestions(list) {
+  const seen = new Set();
+  const out = [];
+  list.forEach(q => {
+    const sig = questionSignature(q);
+    if (seen.has(sig)) return;
+    seen.add(sig);
+    out.push(q);
+  });
+  return out;
+}
 
 // ---- Lessons ----
 // Each lesson carries a POOL of questions (bigger than what's shown in one run).
@@ -51,6 +91,27 @@ const LESSONS = {
         ["Debug", "To find and fix a mistake in code"],
       ] },
     ],
+    // Larger, separately-worded pool sampled only in Review Mode, so reviewing a
+    // completed lesson doesn't just replay the exact same questions.
+    reviewPool: [
+      { type: 'mcq', prompt: "Which statement is true about how a computer runs code?", options: [
+        "It follows the instructions in the order they're written", "It picks random instructions to run",
+        "It understands you the way a person would", "It writes its own instructions" ], answer: 0 },
+      { type: 'mcq', prompt: "What's the best one-line description of 'software'?", options: [
+        "A program, or set of instructions, for a computer", "A physical computer part",
+        "A file format only images use", "A brand of computer" ], answer: 0 },
+      { type: 'mcq', prompt: "If a program doesn't behave the way you expected, what do you call the mistake?", options: [
+        "A bug", "A feature", "A variable", "A function" ], answer: 0 },
+      { type: 'mcq', prompt: "Who typically writes code?", options: [
+        "A programmer", "A hardware technician", "A network cable", "An operating system, on its own" ], answer: 0 },
+      { type: 'match', prompt: "Match each word to its plain-English meaning.", pairs: [
+        ["Code", "Instructions a computer can follow"],
+        ["Software", "Another name for a program"],
+        ["Run", "Execute the instructions"],
+        ["Debug", "Find and fix a bug"],
+      ] },
+      { type: 'truefalse', prompt: "A program runs its instructions in the exact order they appear, unless told otherwise.", answer: true },
+    ],
   },
   u1l2: {
     id: 'u1l2', unit: 'u1', title: 'Variables', icon: '📦', xp: XP.LESSON,
@@ -80,6 +141,23 @@ const LESSONS = {
         ["pi = 3.14", "Stores 3.14 in a box named pi"],
       ] },
     ],
+    reviewPool: [
+      { type: 'mcq', prompt: "Which phrase best captures what `age = 25` does?", options: [
+        "Stores 25 in a box labeled age", "Compares age to 25", "Prints the number 25", "Deletes the variable age" ], answer: 0 },
+      { type: 'mcq', prompt: "Which of these is NOT a valid Python variable name?", options: [
+        "total_score", "_hidden", "3rd_try", "player2" ], answer: 2 },
+      { type: 'mcq', prompt: "What happens if you later write `age = 26` after `age = 25`?", options: [
+        "The box named age now holds 26", "Python creates a second box also named age",
+        "It causes an error", "Nothing changes" ], answer: 0 },
+      { type: 'mcq', prompt: "What's a good real-world way to think about a variable's name?", options: [
+        "A label on a box telling you what's inside", "The exact value stored forever", "A type of loop", "A comment" ], answer: 0 },
+      { type: 'match', prompt: "Match the code to what it actually does.", pairs: [
+        ["total = 0", "Stores 0 in a box named total"],
+        ["name = 'Sam'", "Stores the text Sam in a box named name"],
+        ["is_done = False", "Stores False in a box named is_done"],
+      ] },
+      { type: 'truefalse', hard: true, prompt: "In Python, `my score = 5` (with a space in the name) is a valid variable name.", answer: false },
+    ],
   },
   u1l3: {
     id: 'u1l3', unit: 'u1', title: 'Data Types', icon: '🔤', xp: XP.LESSON,
@@ -108,6 +186,16 @@ const LESSONS = {
         ["'Alex'", "String"], ["42", "Integer"], ["False", "Boolean"], ["2.0", "Float"],
       ] },
     ],
+    reviewPool: [
+      { type: 'mcq', prompt: "What type is `-8`?", options: [ "Integer", "Float", "String", "Boolean" ], answer: 0 },
+      { type: 'mcq', prompt: "What type is `\"3.14\"` — in quotes?", options: [ "String", "Float", "Integer", "Boolean" ], answer: 0 },
+      { type: 'mcq', prompt: "Which of these is a boolean value?", options: [ "False", "'False'", "0", "\"0\"" ], answer: 0 },
+      { type: 'mcq', hard: true, prompt: "Which value below is a float, not an integer?", options: [ "10", "10.5", "'10'", "False" ], answer: 1 },
+      { type: 'match', prompt: "Match each value to its data type.", pairs: [
+        ["12", "Integer"], ["12.0", "Float"], ["\"12\"", "String"], ["True", "Boolean"],
+      ] },
+      { type: 'truefalse', hard: true, prompt: "Every number in Python is automatically treated as a float.", answer: false },
+    ],
   },
   u1l4: {
     id: 'u1l4', unit: 'u1', title: 'Comments & Readability', icon: '📝', xp: XP.LESSON,
@@ -135,6 +223,24 @@ const LESSONS = {
         ["# TODO: fix this later", "A comment reminding the coder of future work"],
         ["x = 5  # starting score", "Code with a comment explaining it"],
       ] },
+    ],
+    reviewPool: [
+      { type: 'mcq', prompt: "What's the main purpose of a code comment?", options: [
+        "To explain something to a human reader", "To make the program run faster",
+        "To store a value", "To create a new variable" ], answer: 0 },
+      { type: 'mcq', prompt: "Which line does the Python interpreter skip entirely?", options: [
+        "# calculate the total", "total = 0", "print(total)", "total = total + 1" ], answer: 0 },
+      { type: 'mcq', prompt: "Good comments usually explain...", options: [
+        "Why the code does something, not just what", "Only what a total beginner already knows",
+        "Nothing useful", "The exact syntax rules of Python" ], answer: 0 },
+      { type: 'mcq', prompt: "Which is generally true about well-placed comments?", options: [
+        "They make code easier for others — and future you — to understand", "They slow the program down",
+        "They're required on every single line", "They replace the need for good variable names" ], answer: 0 },
+      { type: 'match', prompt: "Match each line to what it is.", pairs: [
+        ["# reminder: refactor this", "A comment"],
+        ["x = 10", "An instruction the computer runs"],
+      ] },
+      { type: 'truefalse', prompt: "Comments are optional — Python runs fine without any.", answer: true },
     ],
   },
   u1quiz: {
@@ -1917,6 +2023,28 @@ function collectPrereqs(lessonId, lang, seen) {
   return Array.from(seen);
 }
 
+// Every question available for a lesson id: its own authored pool plus its review
+// bank (if any) — the combined source placement/quiz/test-out sampling draws from.
+function allQuestionsFor(lesson) {
+  if (!lesson) return [];
+  return [...lesson.questions, ...(lesson.reviewPool || [])];
+}
+
+// Every lesson sharing a unit with `lesson` (used to pull sibling review-bank
+// questions into that unit's quiz).
+function siblingLessonReviewQuestions(lesson, lang) {
+  if (!lesson || !lesson.unit) return [];
+  const unit = curriculum(lang).UNITS.find(u => u.id === lesson.unit);
+  if (!unit) return [];
+  const out = [];
+  unit.lessons.forEach(id => {
+    if (id === lesson.id) return;
+    const l = curriculum(lang).LESSONS[id];
+    if (l && l.reviewPool) out.push(...l.reviewPool);
+  });
+  return out;
+}
+
 // Gather every "hard" (test-out-eligible) question from a set of lesson ids.
 function collectHardQuestions(lessonIds, lang) {
   const LESSONS = curriculum(lang).LESSONS;
@@ -1924,9 +2052,9 @@ function collectHardQuestions(lessonIds, lang) {
   lessonIds.forEach(id => {
     const lesson = LESSONS[id];
     if (!lesson) return;
-    lesson.questions.filter(q => q.hard && q.type !== 'code').forEach(q => out.push({ ...q, sourceLesson: id }));
+    allQuestionsFor(lesson).filter(q => q.hard && q.type !== 'code').forEach(q => out.push({ ...q, sourceLesson: id }));
   });
-  return out;
+  return dedupeQuestions(out);
 }
 
 // Placement test pulls only multiple-choice and code (compiling) questions — no true/false.
@@ -1936,9 +2064,9 @@ function collectPlacementQuestions(lessonIds, lang) {
   lessonIds.forEach(id => {
     const lesson = LESSONS[id];
     if (!lesson) return;
-    lesson.questions.filter(q => q.type === 'mcq' || q.type === 'code').forEach(q => out.push({ ...q, sourceLesson: id }));
+    allQuestionsFor(lesson).filter(q => q.type === 'mcq' || q.type === 'code').forEach(q => out.push({ ...q, sourceLesson: id }));
   });
-  return out;
+  return dedupeQuestions(out);
 }
 
 // ===================================================================================

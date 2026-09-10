@@ -103,14 +103,21 @@ function shuffle(arr) {
   return a;
 }
 
-// Randomly samples a lesson's question pool each run: any `required` questions
-// (e.g. explaining a function before code that uses it) always appear, in order,
-// followed by a shuffled mix of the rest, with at most one code exercise LAST —
-// so nothing a code exercise depends on can get shuffled to after it.
-function pickQuestions(lesson, count) {
-  const codeQs = lesson.questions.filter(q => q.type === 'code');
-  const requiredQs = lesson.questions.filter(q => q.required && q.type !== 'code');
-  const otherQs = shuffle(lesson.questions.filter(q => !q.required && q.type !== 'code'));
+// Randomly samples a question pool each run: any `required` questions (e.g. explaining
+// a function before code that uses it) always appear, in order, followed by a shuffled
+// mix of the rest — favoring multiple-choice/code/matching over true-or-false, which
+// only fills remaining slots once those run out — with at most one code exercise LAST
+// so nothing a code exercise depends on can get shuffled to after it. The pool is
+// deduped by content first, so nothing can ever be asked twice in the same run even
+// when a quiz/review pool was built by combining several sources.
+function pickQuestions(pool, count) {
+  pool = dedupeQuestions(pool);
+  const codeQs = pool.filter(q => q.type === 'code');
+  const requiredQs = pool.filter(q => q.required && q.type !== 'code');
+  const rest = pool.filter(q => !q.required && q.type !== 'code');
+  const preferred = shuffle(rest.filter(q => q.type !== 'truefalse'));
+  const fallback = shuffle(rest.filter(q => q.type === 'truefalse'));
+  const otherQs = [...preferred, ...fallback];
   const codeCount = codeQs.length ? 1 : 0;
   const remainingSlots = Math.max(0, count - requiredQs.length - codeCount);
   const pickedOthers = otherQs.slice(0, remainingSlots);
@@ -148,7 +155,16 @@ class LessonEngine {
     this.introIndex = 0;   // which dialogue line is showing
     this.introCheck = false; // showing the "does this make sense?" checkpoint
     // Synthetic quizzes (placement/test-out) already receive an exact, pre-built question list.
-    this.questions = lesson.synthetic ? lesson.questions : pickQuestions(lesson, lesson.sampleSize || (lesson.isQuiz ? 7 : 5));
+    // Reviewing a completed lesson draws from its separate, larger review bank when one
+    // is authored (so a review isn't just a replay of the exact same questions); a quiz
+    // combines its own questions with its unit's sibling lessons' review banks. Both
+    // gracefully fall back to the lesson's own pool when no review bank exists yet.
+    let pool = lesson.questions;
+    if (!lesson.synthetic) {
+      if (this.reviewMode && lesson.reviewPool && lesson.reviewPool.length) pool = lesson.reviewPool;
+      else if (lesson.isQuiz) pool = dedupeQuestions([...lesson.questions, ...siblingLessonReviewQuestions(lesson, lang)]);
+    }
+    this.questions = lesson.synthetic ? lesson.questions : pickQuestions(pool, lesson.sampleSize || (lesson.isQuiz ? 7 : 5));
   }
 
   start() { this.renderShell(); }
@@ -257,7 +273,7 @@ class LessonEngine {
       body.querySelector('#lesson-done').onclick = () => this.onComplete && this.onComplete({ reviewOnly: true });
       return;
     }
-    const awarded = markLessonComplete(this.lang, this.lesson.id, {});
+    const awarded = markLessonComplete(this.lang, this.lesson.id, { perfect: this.mistakes === 0 });
     body.innerHTML = `
       <div class="lesson-complete">
         <div class="big-icon">✅</div>
@@ -409,15 +425,35 @@ class LessonEngine {
         </div>
         <div class="output-box" id="output" style="display:none"></div>
         <div class="feedback-box" id="fb"></div>
+        <div class="code-help-row" id="code-help" style="display:none"></div>
         <div class="lesson-footer"><button class="btn btn-primary" id="next-btn" style="display:none">Continue</button></div>
       </div>`;
     this.animateTalk(body);
     const runBtn = body.querySelector('#run-btn');
     const statusEl = body.querySelector('#run-status');
     const outputEl = body.querySelector('#output');
+    const helpRow = body.querySelector('#code-help');
     let solved = false;
     let erroredOnce = false;
-    const mistakeOnce = () => { if (!erroredOnce) { erroredOnce = true; this.registerMistake(); } };
+    // After one wrong attempt, offer a hint (free) and a skip (advances without solving —
+    // the mistake, and its Memory cost, was already registered by mistakeOnce above).
+    const showCodeHelp = () => {
+      helpRow.style.display = 'flex';
+      helpRow.innerHTML = `
+        <button class="btn btn-ghost btn-sm" id="hint-btn">💡 Hint</button>
+        <button class="btn btn-ghost btn-sm" id="skip-btn">⏭ Skip Question</button>`;
+      helpRow.querySelector('#hint-btn').onclick = () => {
+        const hintHtml = q.hint || (q.mustContain && q.mustContain.length
+          ? `Make sure your code actually uses: ${q.mustContain.map(t => `<code>${escapeHtml(t)}</code>`).join(', ')}.`
+          : 'Re-read the prompt closely and check the exact syntax it asks for.');
+        const hintEl = document.createElement('div');
+        hintEl.className = 'code-hint-text';
+        hintEl.innerHTML = `💡 ${hintHtml}`;
+        helpRow.querySelector('#hint-btn').replaceWith(hintEl);
+      };
+      helpRow.querySelector('#skip-btn').onclick = () => this.advance();
+    };
+    const mistakeOnce = () => { if (!erroredOnce) { erroredOnce = true; this.registerMistake(); showCodeHelp(); } };
     runBtn.onclick = async () => {
       if (solved) return;
       runBtn.disabled = true;
@@ -431,6 +467,7 @@ class LessonEngine {
       const usesRequiredLogic = hasRequiredTokens(code, q.mustContain, this.lang);
       if (outputMatches && usesRequiredLogic) {
         solved = true;
+        helpRow.style.display = 'none';
         outputEl.style.display = 'block';
         outputEl.textContent = result.output;
         outputEl.style.color = 'var(--green)';

@@ -186,6 +186,8 @@ button { cursor: pointer; }
 .ts-pill.uptime { color: var(--green); }
 .ts-pill.xp { color: var(--amber); }
 .ts-pill.memory { color: var(--magenta); }
+.mem-timer { font-family: 'JetBrains Mono', monospace; font-weight: 600; color: var(--text-dim); font-size: 11px; }
+.mem-timer:not(:empty) { margin-left: 6px; }
 
 /* ---------- Stat info bubble (click XP / Uptime / Memory, or the logo for all three) ---------- */
 .info-bubble {
@@ -512,6 +514,10 @@ textarea.code-input {
 .feedback-box.ok { background: rgba(61,255,160,.08); border: 1px solid var(--green); color: var(--green); }
 .feedback-box.err { background: rgba(255,77,109,.08); border: 1px solid var(--red); color: var(--red); }
 .feedback-box .reveal-link { display:inline-block; margin-top:8px; font-size: 12px; text-decoration: underline; color: var(--text-dim); cursor:pointer; }
+
+.code-help-row { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; align-items: center; }
+.code-hint-text { flex-basis: 100%; font-size: 13px; line-height: 1.5; color: var(--text-dim); }
+.code-hint-text code { background: var(--panel-2); padding: 1px 5px; border-radius: 5px; color: var(--accent); }
 
 .lesson-footer { display: flex; justify-content: flex-end; margin-top: 18px; }
 

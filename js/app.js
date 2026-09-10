@@ -9,12 +9,13 @@ function parseRoute() {
 
 const TABS = [
   { route: 'home', icon: '🏠', label: 'Home' },
-  { route: 'path', icon: '🛤️', label: 'Path' },
+  { route: 'path', icon: '🍎✏️', label: 'Learn' },
   { route: 'settings', icon: '⚙️', label: 'Profile' },
 ];
 
 function render() {
   closeInfoBubble();
+  processMemoryRegen(getState().currentLanguage);
   const parts = parseRoute();
   const route = parts[0] || 'home';
   const root = document.getElementById('app');
@@ -44,11 +45,21 @@ function render() {
 window.addEventListener('hashchange', render);
 window.addEventListener('DOMContentLoaded', render);
 
+// Ticks the Memory-regen countdown once a second. When a RAM stick actually finishes
+// refilling mid-session, re-render fully so every Memory display (topbar, home, lesson
+// shell) picks up the new count; otherwise just update the countdown text in place.
+setInterval(() => {
+  const lang = getState().currentLanguage;
+  if (processMemoryRegen(lang)) { render(); return; }
+  const text = memoryTimerText(getLangState(lang).memory);
+  document.querySelectorAll('.mem-timer').forEach(el => { el.textContent = text; el.style.display = text ? '' : 'none'; });
+}, 1000);
+
 // ---------------- Stat info bubbles (click an XP/Uptime/Memory pill, or the logo for all three) ----------------
 const STAT_INFO = {
   xp: {
     icon: '⭐', title: 'XP — Experience Points',
-    body: "Earned by finishing lessons and quizzes. A first-time pass earns full XP; testing out early earns half. XP only ever goes up — it's a running total, not something you can lose.",
+    body: "Earned by finishing lessons and quizzes: 10-15 XP per lesson depending on how much it covers, 50 XP per quiz, plus a small bonus for a mistake-free run. Testing out of a lesson early earns half its XP up front — you can go back and finish it properly later for the other half. XP only ever goes up — it's a running total, not something you can lose.",
   },
   uptime: {
     icon: '🔥', title: 'Uptime — your streak',
@@ -56,7 +67,7 @@ const STAT_INFO = {
   },
   memory: {
     icon: '🔋', title: "Memory — this app's lives",
-    body: "Five RAM sticks per language, standing in for hearts. A wrong answer spends 1; revealing the raw error on a code exercise spends 1 more. Hit zero and you're locked out of new lessons until you replay one you've already finished in Review Mode — that refills Memory for free.",
+    body: "Five RAM sticks per language, standing in for hearts. A wrong answer spends 1; revealing the raw error on a code exercise spends 1 more. Each spent stick quietly refills on its own after 30 minutes — the countdown next to the icon shows when the next one lands. Hit zero and you're locked out of new lessons until a stick regenerates or you replay a finished lesson in Review Mode, which refills Memory instantly and for free.",
   },
 };
 
@@ -121,7 +132,7 @@ function renderTopBar() {
       <div class="topbar-stats">
         <button class="ts-pill uptime" type="button" data-info="uptime">🔥 ${ls.uptime.current}</button>
         <button class="ts-pill xp" type="button" data-info="xp">⭐ ${ls.xp}</button>
-        <button class="ts-pill memory" type="button" data-info="memory">🔋 ${ls.memory.current}</button>
+        <button class="ts-pill memory" type="button" data-info="memory">🔋 ${ls.memory.current}<span class="mem-timer">${escapeHtml(memoryTimerText(ls.memory))}</span></button>
       </div>
     </div></div>`;
 }
@@ -308,7 +319,7 @@ function placementScopeIds(lang) {
 
 function startPlacementTest(main) {
   const lang = getState().currentLanguage;
-  const ids = placementScopeIds(lang);
+  const ids = placementScopeIds(lang).filter(id => !isLessonComplete(lang, id));
   const pool = collectPlacementQuestions(ids, lang);
   const mcqs = shuffle(pool.filter(q => q.type === 'mcq'));
   const codes = shuffle(pool.filter(q => q.type === 'code'));
@@ -403,7 +414,7 @@ function renderPath(main) {
         </div>
       </div>
       <div class="tree-legend">
-        <span>🔓 Available</span><span>✅ Complete</span><span>🔒 Locked</span><span>🚧 Roadmap (not built yet)</span>
+        <span>🔓 Available</span><span>✅ Complete</span><span>🔒 Locked</span>
       </div>
       <div id="path-body"></div>
     </div>`;
@@ -422,7 +433,7 @@ function renderPathList(body, lang) {
     const rows = unit.lessons.map(id => {
       const lesson = getLesson(id, lang);
       const status = nodeStatus(id, lang);
-      const meta = unit.comingSoon ? 'Coming soon' : `${C.LESSONS[id].xp} XP${C.LESSONS[id].isQuiz ? ' · Quiz' : ''}`;
+      const meta = unit.comingSoon ? 'Coming soon' : `${lessonXpValue(C.LESSONS[id])} XP${C.LESSONS[id].isQuiz ? ' · Quiz' : ''}`;
       return `
         <button class="lv-row ${status}" data-id="${id}" data-status="${status}">
           <span class="lv-icon">${status === 'complete' ? '✅' : lesson.icon}</span>
@@ -575,12 +586,17 @@ function openCompleteLessonModal(lessonId) {
   const lang = getState().currentLanguage;
   const lesson = getLesson(lessonId, lang);
   const mem = getLangState(lang).memory;
+  const record = getLangState(lang).completed[lessonId];
+  const remainingXp = record && record.testedOut ? Math.max(0, lessonXpValue(lesson) - record.xp) : 0;
   openModal(`
     <div class="big-icon">✅</div>
     <h2>${escapeHtml(lesson.title)}</h2>
-    <p style="color:var(--text-dim)">Already complete. Replay it in Review Mode to refill Memory — reviews don't cost Memory and don't earn extra XP.</p>
+    <p style="color:var(--text-dim)">${remainingXp > 0
+      ? `You tested out of this one for half credit. Complete it for real to earn the other ${remainingXp} XP.`
+      : "Already complete. Replay it in Review Mode to refill Memory — reviews don't cost Memory and don't earn extra XP."}</p>
     <p style="font-size:13px;color:var(--text-dim)">Current Memory: ${mem.current}/${mem.max}</p>
-    <button class="btn btn-primary btn-block" data-nav="#/review/${lessonId}">Review Lesson</button>
+    ${remainingXp > 0 ? `<button class="btn btn-magenta btn-block" data-nav="#/lesson/${lessonId}">Complete for +${remainingXp} XP</button>` : ''}
+    <button class="btn btn-primary btn-block" data-nav="#/review/${lessonId}" style="margin-top:10px;">Review Lesson</button>
     <button class="btn btn-ghost btn-block" data-close style="margin-top:10px;">Close</button>`);
 }
 
@@ -588,7 +604,7 @@ function openLockedLessonModal(lessonId) {
   const lang = getState().currentLanguage;
   const lesson = getLesson(lessonId, lang);
   const prereqIds = collectPrereqs(lessonId, lang);
-  const hardQs = collectHardQuestions(prereqIds, lang);
+  const hardQs = collectHardQuestions(prereqIds.filter(id => !isLessonComplete(lang, id)), lang);
   const avail = testOutAvailability(lang, lessonId);
   const prereqNames = prereqIds.map(id => getLesson(id, lang).title).join(', ') || '—';
   openModal(`
@@ -651,7 +667,10 @@ function startTestOutRoute(root, lessonId) {
   const lang = getState().currentLanguage;
   const lesson = getLesson(lessonId, lang);
   const prereqIds = collectPrereqs(lessonId, lang);
-  const hardQs = shuffle(collectHardQuestions(prereqIds, lang));
+  // Only quiz on prerequisites not already completed or passed — no point re-testing
+  // something already locked in.
+  const eligiblePrereqIds = prereqIds.filter(id => !isLessonComplete(lang, id));
+  const hardQs = shuffle(collectHardQuestions(eligiblePrereqIds, lang));
   if (!lesson || !hardQs.length) { navigate('#/path'); return; }
   const container = document.createElement('div');
   container.className = 'container';
